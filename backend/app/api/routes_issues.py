@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from markdown_it import MarkdownIt
 from sqlalchemy.orm import Session
 
@@ -40,6 +40,13 @@ def _write_markdown(issue_date, slug: str, markdown: str) -> str:
     return rel_path
 
 
+def _require_ingest_token(x_ingest_token: str | None = Header(default=None)):
+    if not settings.ingest_token:
+        raise HTTPException(status_code=503, detail='Ingest token is not configured')
+    if x_ingest_token != settings.ingest_token:
+        raise HTTPException(status_code=401, detail='Invalid ingest token')
+
+
 @router.get('', response_model=list[IssueGroupMonth])
 def list_issues(db: Session = Depends(get_db)):
     issues = (
@@ -60,7 +67,7 @@ def list_issues(db: Session = Depends(get_db)):
     return result
 
 
-@router.post('/ingest', response_model=IssueIngestResponse)
+@router.post('/ingest', response_model=IssueIngestResponse, dependencies=[Depends(_require_ingest_token)])
 def ingest_issue(payload: IssueIngestRequest, db: Session = Depends(get_db)):
     slug = _make_slug(payload)
     markdown_path = _write_markdown(payload.issue_date, slug, payload.markdown)

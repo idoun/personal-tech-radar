@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_env: str = 'development'
     database_url: str = 'sqlite:///./technews.db'
     content_root: str = '../content'
+    ingest_token: str = ''
 
     model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8')
 
