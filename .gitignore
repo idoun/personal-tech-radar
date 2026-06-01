@@ -8,3 +8,4 @@ frontend/.env.local
 technews.db
 backend/technews.db
 .runtime/*.log
+scripts/__pycache__/
