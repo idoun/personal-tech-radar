@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class IssueListItem(BaseModel):
@@ -28,3 +28,20 @@ class IssueGroupMonth(BaseModel):
     month: int
     label: str
     items: list[IssueListItem]
+
+
+class IssueIngestRequest(BaseModel):
+    issue_date: date
+    title: str
+    summary: str
+    markdown: str
+    slug: str | None = None
+    is_published: bool = True
+
+
+class IssueIngestResponse(BaseModel):
+    ok: bool = True
+    slug: str
+    markdown_path: str
+    created: bool
+    issue: IssueDetail

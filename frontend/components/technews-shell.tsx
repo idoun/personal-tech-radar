@@ -33,11 +33,11 @@ export function TechNewsShell() {
         const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
         setGroups(groupData);
         setActive(latest);
-        const current = new Date();
         const initial: Record<string, boolean> = {};
+        const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
         for (const group of groupData) {
           const key = `${group.year}-${group.month}`;
-          initial[key] = group.year === current.getFullYear() && group.month === current.getMonth() + 1;
+          initial[key] = key === latestKey;
         }
         setExpanded(initial);
       } catch (err) {
