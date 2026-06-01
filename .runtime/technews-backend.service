@@ -1,0 +1,18 @@
+[Unit]
+Description=TechNews Publisher Backend (FastAPI/Uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/.openclaw/workspace/technews-publisher/backend
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/.openclaw/workspace/technews-publisher/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/ubuntu/.openclaw/workspace/technews-publisher/.runtime/backend.systemd.log
+StandardError=append:/home/ubuntu/.openclaw/workspace/technews-publisher/.runtime/backend.systemd.log
+
+[Install]
+WantedBy=default.target

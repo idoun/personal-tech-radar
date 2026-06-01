@@ -1,0 +1,16 @@
+[Unit]
+Description=TechNews Publisher Frontend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/.openclaw/workspace/technews-publisher/frontend
+ExecStartPre=/usr/bin/npm run build
+ExecStart=/home/ubuntu/.openclaw/workspace/technews-publisher/frontend/node_modules/.bin/next start --hostname 127.0.0.1 --port 3010
+Restart=always
+RestartSec=3
+StandardOutput=append:/home/ubuntu/.openclaw/workspace/technews-publisher/.runtime/frontend.systemd.log
+StandardError=append:/home/ubuntu/.openclaw/workspace/technews-publisher/.runtime/frontend.systemd.log
+
+[Install]
+WantedBy=default.target

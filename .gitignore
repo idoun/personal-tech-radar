@@ -1,0 +1,10 @@
+backend/.venv/
+backend/.env
+backend/app/__pycache__/
+backend/app/*/__pycache__/
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+technews.db
+backend/technews.db
+.runtime/*.log
