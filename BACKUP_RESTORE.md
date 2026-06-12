@@ -1,4 +1,4 @@
-# TechNews Publisher Backup and Restore Guide
+# Personal Tech Radar Backup and Restore Guide
 
 This guide is for the case where you remove the current repo checkout, clone it again, and restore the service with minimal surprises.
 

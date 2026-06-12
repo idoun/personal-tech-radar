@@ -1,4 +1,4 @@
-# TechNews Publisher repository analysis
+# Personal Tech Radar repository analysis
 
 > Historical note: this document was written as an early repository snapshot.
 > Parts of it no longer match the current production implementation exactly.
@@ -6,15 +6,15 @@
 
 ## Overview
 
-This repository is a lightweight GeekNews publishing stack with a split architecture:
+This repository is a lightweight Personal Tech Radar stack with a split architecture:
 
 - **Backend**: FastAPI + SQLAlchemy + SQLite
 - **Frontend**: Next.js App Router + React
 - **Ingestion scripts**: small Python CLI scripts writing markdown content plus DB rows
 - **Deployment**: nginx reverse proxy plus user systemd services
 
-Current implemented product scope is narrower than the target Personal Tech Radar Agent.
-Right now it behaves like a daily GeekNews archive publisher rather than a personalized scoring/radar system.
+Current implemented product scope is still narrower than the long-term Personal Tech Radar vision,
+but it already includes profile-driven scoring, delivery preparation, and a branded archive UI on top of the daily GeekNews publishing flow.
 
 ## Repository structure
 

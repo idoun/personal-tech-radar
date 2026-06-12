@@ -1,4 +1,4 @@
-# TechNews Scoring Notes
+# Personal Tech Radar Scoring Notes
 
 ## Why this document exists
 

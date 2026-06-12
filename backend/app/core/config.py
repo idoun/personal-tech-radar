@@ -9,7 +9,7 @@ DEFAULT_DATABASE_PATH = PROJECT_ROOT / 'technews.db'
 
 
 class Settings(BaseSettings):
-    app_name: str = 'TechNews Publisher API'
+    app_name: str = 'Personal Tech Radar API'
     app_env: str = 'development'
     database_url: str = f'sqlite:///{DEFAULT_DATABASE_PATH}'
     content_root: str = '../content'

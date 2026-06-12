@@ -1,10 +1,10 @@
-# TechNews Publisher deployment notes
+# Personal Tech Radar deployment notes
 
 This document describes the current production-style deployment shape used by this repo.
 
 ## Runtime layout
 
-TechNews Publisher is served behind nginx with these public paths:
+Personal Tech Radar is served behind nginx with these public paths:
 
 - `/technews/` -> Next.js frontend
 - `/technews-api/` -> FastAPI backend

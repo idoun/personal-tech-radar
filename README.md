@@ -1,7 +1,7 @@
-# TechNews Publisher
+# Personal Tech Radar
 
-TechNews Publisher is the storage and web publishing layer for a GeekNews-based daily digest.
-It currently ingests prepared markdown summaries, stores issue metadata in SQLite, writes rendered markdown files, and serves the archive through a FastAPI backend plus Next.js frontend.
+Personal Tech Radar is the storage, scoring, and web publishing layer for a GeekNews-based daily digest.
+It ingests prepared markdown summaries, stores issue metadata in SQLite, writes rendered markdown files, scores items against a personal radar profile, and serves the archive through a FastAPI backend plus Next.js frontend.
 
 ## Current scope
 
@@ -9,7 +9,7 @@ It currently ingests prepared markdown summaries, stores issue metadata in SQLit
 - Store full rendered markdown under workspace content files
 - Serve issue archive/detail APIs from FastAPI
 - Render archive/detail UI from Next.js under `/technews`
-- Provide a foundation for the Personal Tech Radar Agent expansion
+- Provide the core platform for the Personal Tech Radar workflow
 
 ## Run locally
 
