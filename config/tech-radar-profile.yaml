@@ -1,0 +1,54 @@
+profile:
+  interests:
+    - AI Systems
+    - Developer Tools
+    - ML Infrastructure
+    - Security
+    - Knowledge Retrieval
+
+  projects:
+    - name: Workflow Automation Platform
+      description: Multi-step agent and workflow orchestration for backend automation
+      keywords:
+        - workflow orchestration
+        - workflow engine
+        - execution graph
+        - task graph
+        - agent runtime
+        - orchestration engine
+        - control plane
+        - tool routing
+
+    - name: Observability and Replay Toolkit
+      description: Trace, replay, and debug tool-based AI or API execution
+      keywords:
+        - observability
+        - tracing
+        - prompt tracing
+        - execution trace
+        - session replay
+        - telemetry
+        - debugging
+        - provenance
+
+    - name: Self-hosted Model Serving Stack
+      description: Private model serving and inference operations in local or controlled environments
+      keywords:
+        - self-hosted llm
+        - private llm
+        - model serving
+        - inference server
+        - local inference
+        - quantization
+        - tensor parallel
+        - gpu serving
+
+    - name: Technical Content Feed
+      description: Summarization, ranking, and delivery of technical content streams
+      keywords:
+        - news digest
+        - personalized feed
+        - content ranking
+        - summarization pipeline
+        - content recommendation
+        - delivery workflow

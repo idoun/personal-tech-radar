@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import json
-import re
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 from ingest_issue import main as ingest_main  # type: ignore
 
@@ -20,6 +18,7 @@ def extract_summary(markdown: str) -> str:
     return 'GeekNews 요약 아카이브'
 
 
+
 def build_title(issue_date: str) -> str:
     return f'GeekNews 어제자 요약 - {issue_date}'
 
@@ -29,12 +28,13 @@ def main():
     if not markdown:
         raise SystemExit('No markdown input received')
 
-    now = datetime.utcnow() + timedelta(hours=9)
+    now = datetime.now(UTC) + timedelta(hours=9)
     issue_date = build_issue_date(now)
+    summary = extract_summary(markdown)
     payload = {
         'issue_date': issue_date,
         'title': build_title(issue_date),
-        'summary': extract_summary(markdown),
+        'summary': summary,
         'markdown': markdown,
     }
 

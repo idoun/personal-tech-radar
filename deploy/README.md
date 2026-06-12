@@ -1,25 +1,93 @@
 # TechNews Publisher deployment notes
 
-## Reverse proxy layout
+This document describes the current production-style deployment shape used by this repo.
 
-TechNews Publisher is served behind nginx with two paths:
+## Runtime layout
 
-- `/technews/` → Next.js frontend
-- `/technews-api/` → FastAPI backend
+TechNews Publisher is served behind nginx with these public paths:
 
-## Important routing detail
+- `/technews/` -> Next.js frontend
+- `/technews-api/` -> FastAPI backend
 
-The frontend is now served as a **root-path Next.js app**.
-That means `next.config.ts` does **not** use `basePath`.
+Local process ports:
 
-Because of that, nginx must do two things:
+- frontend: `127.0.0.1:3012`
+- backend: `127.0.0.1:8010`
 
-1. Forward `/technews/` requests to the frontend app root
-2. Forward `/_next/` asset requests to the same frontend process
+User systemd units:
 
-Without the `/_next/` proxy block, the page HTML may load while JS/CSS assets fail with 404 or 400 errors.
+- `technews-frontend.service`
+- `technews-backend.service`
 
-## Working nginx example
+## Current frontend deployment model
+
+The frontend is a root-path Next.js app that is exposed by nginx under the `/technews` prefix.
+
+Current production flow is:
+
+1. build frontend into `frontend/.next-prod`
+2. publish static assets from `frontend/.next-prod/static/`
+3. rsync them into `/var/www/technews-next-static`
+4. run the Next.js server on `127.0.0.1:3012`
+5. let nginx proxy `/technews/` to that server
+6. let nginx serve `/technews/_next/static/` directly from `/var/www/technews-next-static`
+
+This is different from the earlier pure `/_next/` proxy approach.
+
+## Current helper scripts
+
+### Backend
+
+```bash
+./scripts/restart_backend.sh
+```
+
+What it does:
+
+- stops `technews-backend.service`
+- clears listeners on port `8010`
+- starts the user service again
+- checks `/health`
+- checks `/openapi.json`
+- prints issue-related route names as a smoke test
+
+### Frontend
+
+```bash
+./scripts/restart_frontend.sh
+```
+
+What it does:
+
+- stops `technews-frontend.service`
+- clears listeners on port `3012`
+- removes old `frontend/.next-prod`
+- runs `npm run build:prod:app`
+- publishes static files through `scripts/publish_frontend_static.sh`
+- starts the user service again
+- checks `http://127.0.0.1:3012/technews/`
+
+### Static asset publish
+
+```bash
+./scripts/publish_frontend_static.sh
+```
+
+What it does:
+
+- reads from `frontend/.next-prod/static/`
+- syncs to `/var/www/technews-next-static`
+
+## nginx expectations
+
+The active nginx config should do all of the following:
+
+1. redirect `/technews` to `/technews/`
+2. proxy `/technews/` to `127.0.0.1:3012`
+3. proxy `/technews-api/` to `127.0.0.1:8010`
+4. serve `/technews/_next/static/` from `/var/www/technews-next-static`
+
+Example shape:
 
 ```nginx
 location /technews-api/ {
@@ -35,21 +103,18 @@ location = /technews {
   return 301 /technews/;
 }
 
-location /technews/ {
-  proxy_pass http://127.0.0.1:3013/;
-  proxy_http_version 1.1;
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  proxy_set_header Upgrade $http_upgrade;
-  proxy_set_header Connection "upgrade";
+location ^~ /technews/_next/static/ {
+  alias /var/www/technews-next-static/;
+  access_log off;
+  expires 1y;
+  add_header Cache-Control "public, max-age=31536000, immutable";
 }
 
-location /_next/ {
-  proxy_pass http://127.0.0.1:3013/_next/;
+location /technews/ {
+  proxy_pass http://127.0.0.1:3012;
   proxy_http_version 1.1;
-  proxy_set_header Host $host;
+  proxy_set_header Host 127.0.0.1:3012;
+  proxy_set_header X-Forwarded-Host $host;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto $scheme;
@@ -58,30 +123,31 @@ location /_next/ {
 }
 ```
 
-## Why this setup was needed
-
-Previous attempts mixed these two approaches:
-
-- Next.js `basePath: '/technews'`
-- nginx prefix proxying `/technews/`
-
-That caused stale chunk paths, missing assets, and mobile hard-refresh failures.
-
-The stable approach is:
-
-- keep Next.js at root path
-- let nginx own the `/technews` prefix
-- proxy `/_next/` explicitly
-
 ## Verification checklist
 
-After deploy, verify all three:
+After deploy, verify all of these:
 
-1. Page HTML loads
-   - `GET /technews/` → 200
-2. Frontend assets load
-   - `GET /_next/static/...` → 200
-3. API works
-   - `GET /technews-api/api/issues/latest` → 200
+1. backend health
+   - `curl http://127.0.0.1:8010/health`
+2. frontend local response
+   - `curl -I http://127.0.0.1:3012/technews/`
+3. public frontend
+   - `curl -I https://idoun.pe.kr/technews/`
+4. public API
+   - `curl -I https://idoun.pe.kr/technews-api/api/issues/latest`
+5. static asset directory exists
+   - `ls /var/www/technews-next-static`
 
-If the page opens but the browser console shows chunk or CSS load failures, check whether nginx is forwarding `/_next/` to the same frontend process that served `/technews/`.
+## Common failure modes
+
+If page HTML loads but styling or client-side JS is broken:
+
+- check whether `frontend/.next-prod/static/` was built
+- check whether `/var/www/technews-next-static` was updated
+- check nginx `location ^~ /technews/_next/static/`
+
+If backend restart script fails unexpectedly:
+
+- read recent user journal for `technews-backend.service`
+- check whether another process is still holding `127.0.0.1:8010`
+- note that the fallback direct uvicorn traceback helper can collide if the service already recovered during the script
