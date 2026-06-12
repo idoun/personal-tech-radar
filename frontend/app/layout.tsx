@@ -8,7 +8,7 @@ const notoSansKr = Noto_Sans_KR({
 });
 
 export const metadata: Metadata = {
-  title: 'TechNews Publisher',
+  title: 'Personal Tech Radar',
   description: 'GeekNews daily summary archive',
 };
 
