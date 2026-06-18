@@ -9,6 +9,7 @@ It ingests prepared markdown summaries, stores issue metadata in SQLite, writes 
 - Store full rendered markdown under workspace content files
 - Serve issue archive/detail APIs from FastAPI
 - Render archive/detail UI from Next.js under `/technews`
+- Support simple issue search across metadata and markdown body
 - Provide the core platform for the Personal Tech Radar workflow
 
 ## Run locally
@@ -204,10 +205,15 @@ cat article.md | python scripts/geeknews_publish.py
 
 - `GET /api/issues`
 - `GET /api/issues/latest`
+- `GET /api/issues/search?q=keyword`
 - `GET /api/issues/{slug}`
 - `GET /api/issues/{slug}/delivery-preview`
 - `POST /api/issues/{slug}/delivery-log`
 - `POST /api/issues/ingest`
+
+## Search notes
+
+Search behavior notes live in [docs/search-notes.md](docs/search-notes.md).
 
 ## Tests
 
