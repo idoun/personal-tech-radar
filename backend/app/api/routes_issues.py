@@ -1,7 +1,8 @@
 import json
+import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from markdown_it import MarkdownIt
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,8 @@ from app.schemas.issue import (
     IssueIngestResponse,
     IssueListItem,
     IssueScore,
+    IssueSearchResponse,
+    IssueSearchResult,
 )
 
 router = APIRouter(prefix='/api/issues', tags=['issues'])
@@ -108,6 +111,125 @@ def _issue_detail(issue: Issue) -> IssueDetail:
     return detail
 
 
+def _normalize_search_terms(query: str) -> list[str]:
+    tokens = [token.strip().lower() for token in query.split() if token.strip()]
+    terms: list[str] = []
+    for token in tokens:
+        if token not in terms:
+            terms.append(token)
+    return terms
+
+
+def _plain_markdown_text(markdown: str) -> str:
+    text = markdown
+    text = re.sub(r'```[\s\S]*?```', ' ', text)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', ' ', text)
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    text = re.sub(r'[#>*_~-]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+def _build_search_snippet(text: str, matched_terms: list[str], max_length: int = 150) -> str:
+    compact = re.sub(r'\s+', ' ', text).strip()
+    if not compact:
+        return ''
+
+    lowered = compact.lower()
+    first_pos = min((lowered.find(term) for term in matched_terms if term in lowered), default=-1)
+    if first_pos < 0:
+        return compact[:max_length].strip()
+
+    start = max(0, first_pos - max_length // 3)
+    end = min(len(compact), start + max_length)
+    snippet = compact[start:end].strip()
+    if start > 0:
+        snippet = f'...{snippet}'
+    if end < len(compact):
+        snippet = f'{snippet}...'
+    return snippet
+
+
+def _search_issue(issue: Issue, query: str) -> IssueSearchResult | None:
+    terms = _normalize_search_terms(query)
+    if not terms:
+        return None
+
+    structured = _issue_summary(issue)
+    score = _issue_score(issue, structured)
+    markdown = _read_markdown(issue.markdown_path)
+    markdown_text = _plain_markdown_text(markdown)
+    searchable_fields = [
+        ('title', issue.title, 120),
+        ('short_summary', structured.short_summary, 90),
+        ('impact_summary', structured.impact_summary, 82),
+        ('tags', ' '.join(structured.tags), 78),
+        ('summary', issue.summary, 74),
+        ('recommended_action', score.recommended_action, 68),
+        ('markdown', markdown_text, 52),
+    ]
+
+    best_match: tuple[str, str, list[str], float] | None = None
+    all_matched_terms: list[str] = []
+    normalized_query = ' '.join(terms)
+
+    for field_name, raw_text, weight in searchable_fields:
+        text = re.sub(r'\s+', ' ', (raw_text or '')).strip()
+        if not text:
+            continue
+
+        lowered = text.lower()
+        field_matches = [term for term in terms if term in lowered]
+        if not field_matches:
+            continue
+
+        for term in field_matches:
+            if term not in all_matched_terms:
+                all_matched_terms.append(term)
+
+        first_pos = min(lowered.find(term) for term in field_matches)
+        field_score = float(weight + len(field_matches) * 14)
+        if len(field_matches) == len(terms):
+            field_score += 18
+        if normalized_query and normalized_query in lowered:
+            field_score += 16
+        field_score -= min(first_pos, 240) / 120.0
+
+        if best_match is None or field_score > best_match[3]:
+            best_match = (field_name, text, field_matches, field_score)
+
+    if best_match is None:
+        return None
+
+    matched_field, matched_text, matched_terms, match_score = best_match
+    recency_bonus = issue.issue_date.toordinal() / 100000.0
+    item = IssueListItem(
+        id=issue.id,
+        slug=issue.slug,
+        title=issue.title,
+        summary=issue.summary,
+        short_summary=structured.short_summary,
+        impact_summary=structured.impact_summary,
+        action_items=structured.action_items,
+        tags=structured.tags,
+        radar_category=structured.radar_category,
+        radar_status=structured.radar_status,
+        score=IssueScore.model_validate(score.model_dump()),
+        issue_date=issue.issue_date,
+        year=issue.year,
+        month=issue.month,
+        is_published=issue.is_published,
+    )
+    return IssueSearchResult(
+        **item.model_dump(),
+        matched_field=matched_field,
+        snippet=_build_search_snippet(matched_text, matched_terms),
+        matched_terms=all_matched_terms,
+        match_score=round(match_score + recency_bonus, 3),
+    )
+
+
 def _make_slug(payload: IssueIngestRequest) -> str:
     return payload.slug or payload.issue_date.isoformat()
 
@@ -145,6 +267,33 @@ def list_issues(_user_id: int = Depends(require_authenticated_user), db: Session
     for (year, month), items in grouped.items():
         result.append(IssueGroupMonth(year=year, month=month, label=f'{year}-{month:02d}', items=items))
     return result
+
+
+@router.get('/search', response_model=IssueSearchResponse)
+def search_issues(
+    q: str = Query(min_length=1, max_length=120),
+    _user_id: int = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    query = ' '.join(q.split()).strip()
+    if not query:
+        return IssueSearchResponse(query='', total=0, items=[])
+
+    issues = (
+        db.query(Issue)
+        .filter(Issue.is_published.is_(True))
+        .order_by(Issue.issue_date.desc(), Issue.id.desc())
+        .all()
+    )
+
+    results: list[IssueSearchResult] = []
+    for issue in issues:
+        match = _search_issue(issue, query)
+        if match is not None:
+            results.append(match)
+
+    results.sort(key=lambda item: (item.match_score, item.issue_date), reverse=True)
+    return IssueSearchResponse(query=query, total=len(results), items=results[:50])
 
 
 @router.post('/ingest', response_model=IssueIngestResponse, dependencies=[Depends(_require_ingest_token)])

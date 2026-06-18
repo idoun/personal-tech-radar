@@ -1,4 +1,4 @@
-import type { AuthSession, IssueDetail, IssueGroupMonth } from './types';
+import type { AuthSession, IssueDetail, IssueGroupMonth, IssueSearchResponse } from './types';
 
 function getSiteOrigin() {
   if (typeof window === 'undefined') {
@@ -125,6 +125,10 @@ export function fetchLatestIssue() {
 
 export function fetchIssue(slug: string) {
   return apiFetch<IssueDetail>(`/api/issues/${slug}`);
+}
+
+export function fetchIssueSearch(query: string) {
+  return apiFetch<IssueSearchResponse>(`/api/issues/search?q=${encodeURIComponent(query)}`);
 }
 
 export function fetchAuthSession() {

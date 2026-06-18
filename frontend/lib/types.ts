@@ -68,6 +68,19 @@ export type IssueGroupMonth = {
   items: IssueListItem[];
 };
 
+export type IssueSearchResult = IssueListItem & {
+  matched_field: string;
+  snippet: string;
+  matched_terms: string[];
+  match_score: number;
+};
+
+export type IssueSearchResponse = {
+  query: string;
+  total: number;
+  items: IssueSearchResult[];
+};
+
 export type IssueDetail = IssueListItem & {
   markdown: string;
   html: string;

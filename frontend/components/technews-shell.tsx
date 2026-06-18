@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchAuthSession, fetchIssue, fetchIssueGroups, fetchLatestIssue, loginWithPassword, logoutSharedSession } from '@/lib/api';
-import type { AuthUser, IssueDetail, IssueGroupMonth, IssueListItem } from '@/lib/types';
+import { fetchAuthSession, fetchIssue, fetchIssueGroups, fetchIssueSearch, fetchLatestIssue, loginWithPassword, logoutSharedSession } from '@/lib/api';
+import type { AuthUser, IssueDetail, IssueGroupMonth, IssueListItem, IssueSearchResult } from '@/lib/types';
 import { TechNewsAuthForm } from './technews-auth-form';
 
 type ThemeMode = 'dark' | 'light';
@@ -169,6 +169,8 @@ function getThemeClass(theme: ThemeMode) {
       themeCardIdle: 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100',
       themeCardActive: 'border-rose-300 bg-rose-50 text-slate-900',
       ghostButton: 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100',
+      searchInput: 'border-slate-300 bg-slate-50 text-slate-900 placeholder:text-slate-400',
+      searchMark: 'bg-amber-200 text-slate-900',
     };
   }
 
@@ -206,6 +208,8 @@ function getThemeClass(theme: ThemeMode) {
     themeCardIdle: 'border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-900',
     themeCardActive: 'border-sky-500/40 bg-sky-500/12 text-white',
     ghostButton: 'border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800',
+    searchInput: 'border-slate-700 bg-slate-900/80 text-slate-100 placeholder:text-slate-500',
+    searchMark: 'bg-sky-300 text-slate-950',
   };
 }
 
@@ -216,11 +220,74 @@ function buildTopItems(groups: IssueGroupMonth[]): IssueListItem[] {
     .slice(0, 5);
 }
 
+function normalizeSearchTerms(query: string) {
+  return Array.from(new Set(query.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean)));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function splitHighlightedText(text: string, query: string) {
+  const terms = normalizeSearchTerms(query);
+  if (!terms.length) {
+    return [{ text, matched: false }];
+  }
+
+  const pattern = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi');
+  return text.split(pattern).filter(Boolean).map((part) => ({
+    text: part,
+    matched: terms.some((term) => part.toLowerCase() === term),
+  }));
+}
+
+function HighlightText({ text, query, markClassName }: { text: string; query: string; markClassName: string }) {
+  const parts = splitHighlightedText(text, query);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.matched ? (
+          <mark key={`${part.text}-${index}`} className={`rounded px-0.5 ${markClassName}`}>
+            {part.text}
+          </mark>
+        ) : (
+          <span key={`${part.text}-${index}`}>{part.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function matchedFieldLabel(field: string) {
+  switch (field) {
+    case 'title':
+      return '제목';
+    case 'short_summary':
+      return '짧은 요약';
+    case 'impact_summary':
+      return '영향';
+    case 'summary':
+      return '요약';
+    case 'tags':
+      return '태그';
+    case 'recommended_action':
+      return '액션';
+    case 'markdown':
+      return '본문';
+    default:
+      return '문서';
+  }
+}
+
 export function TechNewsShell() {
   const [sessionChecked, setSessionChecked] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [groups, setGroups] = useState<IssueGroupMonth[]>([]);
   const [active, setActive] = useState<IssueDetail | null>(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<IssueSearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -242,20 +309,24 @@ export function TechNewsShell() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  function applyGroupedIssues(groupData: IssueGroupMonth[], latest: IssueDetail) {
+    setGroups(groupData);
+    setActive(latest);
+    const initial: Record<string, boolean> = {};
+    const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
+    for (const group of groupData) {
+      const key = `${group.year}-${group.month}`;
+      initial[key] = key === latestKey;
+    }
+    setExpanded(initial);
+  }
+
   useEffect(() => {
     async function loadIssueData() {
       try {
         const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
-        setGroups(groupData);
-        setActive(latest);
+        applyGroupedIssues(groupData, latest);
         setError(null);
-        const initial: Record<string, boolean> = {};
-        const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
-        for (const group of groupData) {
-          const key = `${group.year}-${group.month}`;
-          initial[key] = key === latestKey;
-        }
-        setExpanded(initial);
       } catch (err) {
         setError(err instanceof Error ? err.message : '불러오지 못했습니다.');
       } finally {
@@ -287,6 +358,52 @@ export function TechNewsShell() {
     void bootstrap();
   }, []);
 
+  useEffect(() => {
+    const nextQuery = searchInput.trim();
+    const timeoutId = window.setTimeout(() => {
+      setSearchQuery(nextQuery);
+    }, 180);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
+    if (!searchQuery) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+    void (async () => {
+      try {
+        const response = await fetchIssueSearch(searchQuery);
+        if (!cancelled) {
+          setSearchResults(response.items);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSearchResults([]);
+          setError(err instanceof Error ? err.message : '검색하지 못했습니다.');
+        }
+      } finally {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser, searchQuery]);
+
   async function handleOpen(slug: string) {
     try {
       const issue = await fetchIssue(slug);
@@ -311,15 +428,7 @@ export function TechNewsShell() {
       setAuthUser(session.user);
       setError(null);
       const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
-      setGroups(groupData);
-      setActive(latest);
-      const initial: Record<string, boolean> = {};
-      const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
-      for (const group of groupData) {
-        const key = `${group.year}-${group.month}`;
-        initial[key] = key === latestKey;
-      }
-      setExpanded(initial);
+      applyGroupedIssues(groupData, latest);
     } finally {
       setLoading(false);
     }
@@ -337,6 +446,9 @@ export function TechNewsShell() {
     }
     setGroups([]);
     setActive(null);
+    setSearchInput('');
+    setSearchQuery('');
+    setSearchResults([]);
     setError(null);
     setLoading(false);
     setSettingsOpen(false);
@@ -358,6 +470,7 @@ export function TechNewsShell() {
     [groups, active, topSummary],
   );
   const themeClass = getThemeClass(theme);
+  const isSearchMode = searchQuery.length > 0;
 
   if (!sessionChecked || (!authUser && loading)) {
     return <div className={`flex min-h-screen items-center justify-center ${themeClass.app}`}><div className={themeClass.sub}>세션 확인 중...</div></div>;
@@ -387,33 +500,94 @@ export function TechNewsShell() {
           <div className={`text-[11px] uppercase tracking-[0.24em] ${themeClass.sidebarEyebrow}`}>TechNews</div>
           <h1 className={`mt-1.5 text-xl font-semibold ${themeClass.title}`}>Personal Tech Radar</h1>
           <p className={`mt-1.5 text-[15px] leading-6 md:text-sm ${themeClass.sub}`}>중요도, 레이더 상태, 액션을 중심으로 GeekNews를 쌓아보는 공간</p>
+          <div className="mt-4 flex items-center gap-2">
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="제목, 요약, 본문 검색"
+              className={`min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${themeClass.searchInput}`}
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                className={`rounded-xl border px-3 py-2 text-xs ${themeClass.ghostButton}`}
+                onClick={() => setSearchInput('')}
+              >
+                지우기
+              </button>
+            ) : null}
+          </div>
+          <div className={`mt-2 text-xs ${themeClass.sub}`}>
+            {searchLoading ? '검색 중...' : isSearchMode ? `검색어: ${searchQuery}` : '검색어를 입력하면 결과 리스트로 전환됩니다.'}
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5">
-          <div className={`mb-2.5 rounded-xl border ${themeClass.sidePanel}`}>
-            <div className={`border-b px-3 py-2 text-xs uppercase tracking-[0.2em] ${themeClass.monthDivider} ${themeClass.sub}`}>Top signals</div>
-            <div className="px-1.5 py-1">
-              {topItems.map((item, index) => (
-                <button
-                  key={`top-${item.slug}`}
-                  type="button"
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    void handleOpen(item.slug);
-                  }}
-                  className={`mb-1 w-full rounded-lg border px-3 text-left ${themeClass.sidePanelItem} ${index < 2 ? 'py-2.5' : 'py-2'} md:py-2.5`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={`line-clamp-1 text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>{displayTitle(item.title)}</span>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${scoreTone(item.score.final_score)}`}>
-                      {item.score.final_score.toFixed(1)}
-                    </span>
-                  </div>
-                  <div className={`mt-1 line-clamp-2 text-xs leading-5 md:line-clamp-2 md:text-[11px] ${themeClass.sub}`}>{item.short_summary}</div>
-                </button>
-              ))}
+          {isSearchMode ? (
+            <div className={`mb-2.5 rounded-xl border ${themeClass.sidePanel}`}>
+              <div className={`border-b px-3 py-2 text-xs uppercase tracking-[0.2em] ${themeClass.monthDivider} ${themeClass.sub}`}>
+                검색 결과 {searchLoading ? '' : `${searchResults.length}건`}
+              </div>
+              <div className="px-1.5 py-1">
+                {!searchLoading && searchResults.length === 0 ? (
+                  <div className={`px-3 py-6 text-sm ${themeClass.sub}`}>검색 결과가 없습니다.</div>
+                ) : null}
+                {searchResults.map((item) => {
+                  const activeSlug = active?.slug === item.slug;
+                  return (
+                    <button
+                      key={`search-${item.slug}`}
+                      type="button"
+                      onClick={() => {
+                        setMobileSidebarOpen(false);
+                        void handleOpen(item.slug);
+                      }}
+                      className={`mb-1 w-full rounded-lg border px-3 py-2 text-left transition ${activeSlug ? themeClass.monthItemActive : themeClass.sidePanelItem}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className={`text-xs ${themeClass.sub}`}>{formatLongDate(item.issue_date)}</div>
+                        <div className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${themeClass.pill}`}>
+                          {matchedFieldLabel(item.matched_field)}
+                        </div>
+                      </div>
+                      <div className={`mt-1 line-clamp-2 text-[15px] font-medium md:text-sm ${activeSlug ? '' : themeClass.strongText}`}>
+                        <HighlightText text={displayTitle(item.title)} query={searchQuery} markClassName={themeClass.searchMark} />
+                      </div>
+                      <div className={`mt-1 line-clamp-3 text-[13px] leading-5 md:text-xs ${themeClass.sub}`}>
+                        <HighlightText text={item.snippet} query={searchQuery} markClassName={themeClass.searchMark} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          {grouped.map((group) => {
+          ) : (
+            <div className={`mb-2.5 rounded-xl border ${themeClass.sidePanel}`}>
+              <div className={`border-b px-3 py-2 text-xs uppercase tracking-[0.2em] ${themeClass.monthDivider} ${themeClass.sub}`}>Top signals</div>
+              <div className="px-1.5 py-1">
+                {topItems.map((item, index) => (
+                  <button
+                    key={`top-${item.slug}`}
+                    type="button"
+                    onClick={() => {
+                      setMobileSidebarOpen(false);
+                      void handleOpen(item.slug);
+                    }}
+                    className={`mb-1 w-full rounded-lg border px-3 text-left ${themeClass.sidePanelItem} ${index < 2 ? 'py-2.5' : 'py-2'} md:py-2.5`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`line-clamp-1 text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>{displayTitle(item.title)}</span>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${scoreTone(item.score.final_score)}`}>
+                        {item.score.final_score.toFixed(1)}
+                      </span>
+                    </div>
+                    <div className={`mt-1 line-clamp-2 text-xs leading-5 md:line-clamp-2 md:text-[11px] ${themeClass.sub}`}>{item.short_summary}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!isSearchMode ? grouped.map((group) => {
             const key = `${group.year}-${group.month}`;
             const isExpanded = expanded[key] ?? false;
             return (
@@ -455,7 +629,7 @@ export function TechNewsShell() {
                 ) : null}
               </div>
             );
-          })}
+          }) : null}
         </div>
       </aside>
 
@@ -491,7 +665,7 @@ export function TechNewsShell() {
             </div>
           </div>
           <h2 className={`mt-1.5 text-[1.7rem] font-semibold leading-tight md:text-2xl ${themeClass.title}`}>
-            {active ? displayTitle(active.title) : 'GeekNews Daily Summary'}
+            {active ? <HighlightText text={displayTitle(active.title)} query={searchQuery} markClassName={themeClass.searchMark} /> : 'GeekNews Daily Summary'}
           </h2>
           <p className={`mt-1.5 text-[15px] md:text-sm ${themeClass.sub}`}>{active ? formatLongDate(active.issue_date) : '문서를 고르는 중'}</p>
         </div>
@@ -504,7 +678,9 @@ export function TechNewsShell() {
               <div className="grid gap-2 lg:grid-cols-[1.45fr_0.95fr]">
                 <div className={`rounded-xl border px-3.5 py-2.5 md:px-4 ${themeClass.summaryBox}`}>
                   <div className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${themeClass.summaryEyebrow}`}>10초 요약</div>
-                  <div className={`mt-1 max-w-3xl text-[15px] font-medium leading-[1.55] md:text-[15px] ${themeClass.strongText}`}>{topSummary}</div>
+                  <div className={`mt-1 max-w-3xl text-[15px] font-medium leading-[1.55] md:text-[15px] ${themeClass.strongText}`}>
+                    <HighlightText text={topSummary} query={searchQuery} markClassName={themeClass.searchMark} />
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${scoreTone(active.score.final_score)}`}>
                       중요도 {active.score.final_score.toFixed(1)}
@@ -520,9 +696,13 @@ export function TechNewsShell() {
 
                 <div className={`rounded-xl border px-3.5 py-2.5 md:px-4 ${themeClass.panel}`}>
                   <div className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${themeClass.sub}`}>왜 중요한가</div>
-                  <p className={`mt-1.5 text-[15px] leading-[1.6] md:text-sm ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>{active.impact_summary}</p>
+                  <p className={`mt-1.5 text-[15px] leading-[1.6] md:text-sm ${theme === 'dark' ? 'text-slate-200' : 'text-slate-700'}`}>
+                    <HighlightText text={active.impact_summary} query={searchQuery} markClassName={themeClass.searchMark} />
+                  </p>
                   <div className={`mt-2 text-[11px] uppercase tracking-[0.2em] ${themeClass.sub}`}>점수 근거</div>
-                  <p className={`mt-1 text-[15px] leading-[1.6] md:text-sm ${themeClass.bodyText}`}>{active.score.reason}</p>
+                  <p className={`mt-1 text-[15px] leading-[1.6] md:text-sm ${themeClass.bodyText}`}>
+                    <HighlightText text={active.score.reason} query={searchQuery} markClassName={themeClass.searchMark} />
+                  </p>
                 </div>
               </div>
 
@@ -533,7 +713,7 @@ export function TechNewsShell() {
                     {active.action_items.map((item, index) => (
                       <li key={`${item}-${index}`} className="flex gap-2">
                         <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${themeClass.actionDot}`}>{index + 1}</span>
-                        <span>{item}</span>
+                        <span><HighlightText text={item} query={searchQuery} markClassName={themeClass.searchMark} /></span>
                       </li>
                     ))}
                   </ol>
@@ -562,7 +742,9 @@ export function TechNewsShell() {
                     ))}
                     <div className={`mt-2 rounded-lg border px-3 py-1.5 ${themeClass.pill}`}>
                       <div className={`text-xs ${themeClass.sub}`}>추천 다음 액션</div>
-                      <div className={`mt-0.5 text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>{active.score.recommended_action}</div>
+                      <div className={`mt-0.5 text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>
+                        <HighlightText text={active.score.recommended_action} query={searchQuery} markClassName={themeClass.searchMark} />
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -574,7 +756,7 @@ export function TechNewsShell() {
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {active.tags.map((tag) => (
                       <span key={tag} className={`rounded-full border px-3 py-1 text-xs ${themeClass.pill}`}>
-                        {tag}
+                        <HighlightText text={tag} query={searchQuery} markClassName={themeClass.searchMark} />
                       </span>
                     ))}
                   </div>
@@ -584,7 +766,7 @@ export function TechNewsShell() {
               {parsed.intro.length > 0 ? (
                 <div className={`space-y-1.5 rounded-xl border px-3.5 py-2.5 text-[15px] leading-[1.65] md:px-4 ${themeClass.panel} ${themeClass.bodyText}`}>
                   {parsed.intro.map((line, index) => (
-                    <p key={`${line}-${index}`}>{line}</p>
+                    <p key={`${line}-${index}`}><HighlightText text={line} query={searchQuery} markClassName={themeClass.searchMark} /></p>
                   ))}
                 </div>
               ) : null}
@@ -594,9 +776,13 @@ export function TechNewsShell() {
                   <section key={`${card.title}-${index}`} className={`rounded-xl border p-3.5 md:p-4 ${themeClass.panelSoft}`}>
                     <h3 className={`text-[1.1rem] font-semibold leading-6 md:text-[1.15rem] md:leading-7 ${themeClass.title}`}>
                       {card.ai ? <span className="mr-2">🤖</span> : null}
-                      <span className={card.ai ? 'font-bold' : ''}>{card.title}</span>
+                      <span className={card.ai ? 'font-bold' : ''}>
+                        <HighlightText text={card.title} query={searchQuery} markClassName={themeClass.searchMark} />
+                      </span>
                     </h3>
-                    <p className={`mt-1.5 text-[15px] leading-[1.65] ${themeClass.bodyText}`}>{card.summary}</p>
+                    <p className={`mt-1.5 text-[15px] leading-[1.65] ${themeClass.bodyText}`}>
+                      <HighlightText text={card.summary} query={searchQuery} markClassName={themeClass.searchMark} />
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {card.source ? (
                         <a

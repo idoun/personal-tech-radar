@@ -79,6 +79,19 @@ class IssueGroupMonth(BaseModel):
     items: list[IssueListItem]
 
 
+class IssueSearchResult(IssueListItem):
+    matched_field: str
+    snippet: str
+    matched_terms: list[str] = Field(default_factory=list)
+    match_score: float
+
+
+class IssueSearchResponse(BaseModel):
+    query: str
+    total: int
+    items: list[IssueSearchResult]
+
+
 class IssueIngestRequest(BaseModel):
     issue_date: date
     title: str
