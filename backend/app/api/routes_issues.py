@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from markdown_it import MarkdownIt
 from sqlalchemy.orm import Session
 
+from app.core.auth import require_authenticated_user
 from app.core.config import settings
 from app.core.delivery import build_delivery_log_result, build_delivery_preview
 from app.core.profile import load_tech_radar_profile
@@ -127,7 +128,7 @@ def _require_ingest_token(x_ingest_token: str | None = Header(default=None)):
 
 
 @router.get('', response_model=list[IssueGroupMonth])
-def list_issues(db: Session = Depends(get_db)):
+def list_issues(_user_id: int = Depends(require_authenticated_user), db: Session = Depends(get_db)):
     issues = (
         db.query(Issue)
         .filter(Issue.is_published.is_(True))
@@ -219,7 +220,7 @@ def ingest_issue(payload: IssueIngestRequest, db: Session = Depends(get_db)):
 
 
 @router.get('/latest', response_model=IssueDetail)
-def latest_issue(db: Session = Depends(get_db)):
+def latest_issue(_user_id: int = Depends(require_authenticated_user), db: Session = Depends(get_db)):
     issue = (
         db.query(Issue)
         .filter(Issue.is_published.is_(True))
@@ -232,7 +233,7 @@ def latest_issue(db: Session = Depends(get_db)):
 
 
 @router.get('/{slug}', response_model=IssueDetail)
-def get_issue(slug: str, db: Session = Depends(get_db)):
+def get_issue(slug: str, _user_id: int = Depends(require_authenticated_user), db: Session = Depends(get_db)):
     issue = db.query(Issue).filter(Issue.slug == slug, Issue.is_published.is_(True)).first()
     if not issue:
         raise HTTPException(status_code=404, detail='Issue not found')

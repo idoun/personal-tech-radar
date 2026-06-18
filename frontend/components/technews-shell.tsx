@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchIssue, fetchIssueGroups, fetchLatestIssue } from '@/lib/api';
-import type { IssueDetail, IssueGroupMonth, IssueListItem } from '@/lib/types';
+import { fetchAuthSession, fetchIssue, fetchIssueGroups, fetchLatestIssue, loginWithPassword, logoutSharedSession } from '@/lib/api';
+import type { AuthUser, IssueDetail, IssueGroupMonth, IssueListItem } from '@/lib/types';
+import { TechNewsAuthForm } from './technews-auth-form';
 
 type ThemeMode = 'dark' | 'light';
 
@@ -216,6 +217,8 @@ function buildTopItems(groups: IssueGroupMonth[]): IssueListItem[] {
 }
 
 export function TechNewsShell() {
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [groups, setGroups] = useState<IssueGroupMonth[]>([]);
   const [active, setActive] = useState<IssueDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -240,11 +243,12 @@ export function TechNewsShell() {
   }, [theme]);
 
   useEffect(() => {
-    async function load() {
+    async function loadIssueData() {
       try {
         const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
         setGroups(groupData);
         setActive(latest);
+        setError(null);
         const initial: Record<string, boolean> = {};
         const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
         for (const group of groupData) {
@@ -259,7 +263,28 @@ export function TechNewsShell() {
       }
     }
 
-    void load();
+    async function bootstrap() {
+      try {
+        const session = await fetchAuthSession();
+        if (!session.authenticated || !session.user) {
+          setAuthUser(null);
+          setLoading(false);
+          return;
+        }
+        if (typeof window !== 'undefined' && session.access_token) {
+          window.localStorage.setItem('idounai_token', session.access_token);
+        }
+        setAuthUser(session.user);
+        await loadIssueData();
+      } catch {
+        setAuthUser(null);
+        setLoading(false);
+      } finally {
+        setSessionChecked(true);
+      }
+    }
+
+    void bootstrap();
   }, []);
 
   async function handleOpen(slug: string) {
@@ -270,6 +295,52 @@ export function TechNewsShell() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '문서를 열지 못했습니다.');
     }
+  }
+
+  async function handleLogin(email: string, password: string) {
+    setLoading(true);
+    try {
+      const loginResult = await loginWithPassword(email, password);
+      if (typeof window !== 'undefined' && loginResult.access_token) {
+        window.localStorage.setItem('idounai_token', loginResult.access_token);
+      }
+      const session = await fetchAuthSession();
+      if (!session.authenticated || !session.user) {
+        throw new Error('로그인 세션을 확인하지 못했습니다.');
+      }
+      setAuthUser(session.user);
+      setError(null);
+      const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
+      setGroups(groupData);
+      setActive(latest);
+      const initial: Record<string, boolean> = {};
+      const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
+      for (const group of groupData) {
+        const key = `${group.year}-${group.month}`;
+        initial[key] = key === latestKey;
+      }
+      setExpanded(initial);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await logoutSharedSession();
+    } catch {
+      // ignore logout transport failures and still clear local UI state
+    }
+    setAuthUser(null);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('idounai_token');
+    }
+    setGroups([]);
+    setActive(null);
+    setError(null);
+    setLoading(false);
+    setSettingsOpen(false);
+    setMobileSidebarOpen(false);
   }
 
   const parsed = active ? parseIssueBody(active.markdown) : { intro: [], cards: [] };
@@ -287,6 +358,14 @@ export function TechNewsShell() {
     [groups, active, topSummary],
   );
   const themeClass = getThemeClass(theme);
+
+  if (!sessionChecked || (!authUser && loading)) {
+    return <div className={`flex min-h-screen items-center justify-center ${themeClass.app}`}><div className={themeClass.sub}>세션 확인 중...</div></div>;
+  }
+
+  if (!authUser) {
+    return <TechNewsAuthForm onSubmit={handleLogin} />;
+  }
 
   return (
     <div className={`flex h-screen overflow-hidden ${themeClass.app}`}>
@@ -385,6 +464,7 @@ export function TechNewsShell() {
           <div className="flex items-center justify-between gap-3">
             <div className={`text-xs uppercase tracking-[0.24em] ${themeClass.accentText}`}>Published brief</div>
             <div className="flex items-center gap-2">
+              <div className={`hidden text-xs md:block ${themeClass.sub}`}>{authUser.email}</div>
               <button
                 type="button"
                 className={`inline-flex items-center rounded-full border px-3 py-1 text-xs md:hidden ${themeClass.mobileButton}`}
@@ -398,6 +478,15 @@ export function TechNewsShell() {
                 onClick={() => setSettingsOpen(true)}
               >
                 설정
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs ${themeClass.ghostButton}`}
+                onClick={() => {
+                  void handleLogout();
+                }}
+              >
+                로그아웃
               </button>
             </div>
           </div>

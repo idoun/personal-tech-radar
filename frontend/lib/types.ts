@@ -10,6 +10,19 @@ export type IssueScore = {
   recommended_action: string;
 };
 
+export type AuthUser = {
+  id: number;
+  email: string;
+  is_active: boolean;
+};
+
+export type AuthSession = {
+  authenticated: boolean;
+  user?: AuthUser | null;
+  access_token?: string | null;
+  token_type?: string;
+};
+
 export type DeliveryDecision = {
   should_send: boolean;
   important: boolean;
