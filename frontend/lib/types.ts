@@ -85,5 +85,7 @@ export type IssueDetail = IssueListItem & {
   markdown: string;
   html: string;
   markdown_path: string;
+  community_reaction_summary: string;
+  community_reaction_bullets: string[];
   delivery_preview?: DeliveryPreview | null;
 };

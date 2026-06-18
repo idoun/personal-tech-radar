@@ -52,6 +52,10 @@ def _issue_summary(issue: Issue) -> StructuredSummary:
     return parse_structured_summary(issue.summary, fallback_summary=issue.summary, markdown=_read_markdown(issue.markdown_path))
 
 
+def _community_reaction_bullets(issue: Issue) -> list[str]:
+    return [item.strip() for item in json.loads(issue.community_reaction_bullets_json or '[]') if str(item).strip()]
+
+
 
 def _issue_score(issue: Issue, structured: StructuredSummary | None = None) -> ArticleScoreResult:
     structured = structured or _issue_summary(issue)
@@ -101,6 +105,8 @@ def _issue_detail(issue: Issue) -> IssueDetail:
         markdown=markdown,
         html=md.render(markdown),
         markdown_path=issue.markdown_path,
+        community_reaction_summary=(issue.community_reaction_summary or '').strip(),
+        community_reaction_bullets=_community_reaction_bullets(issue),
     )
     preview = build_delivery_preview(
         detail,
@@ -339,6 +345,8 @@ def ingest_issue(payload: IssueIngestRequest, db: Session = Depends(get_db)):
         score.reason = payload.score_reason.strip() or score.reason
     if payload.recommended_action:
         score.recommended_action = payload.recommended_action.strip() or score.recommended_action
+    community_reaction_summary = (payload.community_reaction_summary or '').strip()
+    community_reaction_bullets = [item.strip() for item in payload.community_reaction_bullets if item.strip()][:2]
 
     issue.title = payload.title
     issue.summary = payload.summary
@@ -357,6 +365,8 @@ def ingest_issue(payload: IssueIngestRequest, db: Session = Depends(get_db)):
     issue.final_score = score.final_score
     issue.score_reason = score.reason
     issue.recommended_action = score.recommended_action
+    issue.community_reaction_summary = community_reaction_summary[:160]
+    issue.community_reaction_bullets_json = json.dumps(community_reaction_bullets, ensure_ascii=False)
     issue.issue_date = payload.issue_date
     issue.year = payload.issue_date.year
     issue.month = payload.issue_date.month

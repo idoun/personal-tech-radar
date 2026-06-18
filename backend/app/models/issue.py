@@ -28,6 +28,8 @@ class Issue(Base):
     final_score: Mapped[float] = mapped_column(default=0.0, index=True)
     score_reason: Mapped[str] = mapped_column(Text, default='')
     recommended_action: Mapped[str] = mapped_column(Text, default='')
+    community_reaction_summary: Mapped[str] = mapped_column(Text, default='')
+    community_reaction_bullets_json: Mapped[str] = mapped_column(Text, default='[]')
     telegram_sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     telegram_message: Mapped[str] = mapped_column(Text, default='')

@@ -69,6 +69,8 @@ class IssueDetail(IssueListItem):
     markdown: str
     html: str
     markdown_path: str
+    community_reaction_summary: str = ''
+    community_reaction_bullets: list[str] = Field(default_factory=list)
     delivery_preview: DeliveryPreviewPayload | None = None
 
 
@@ -112,6 +114,8 @@ class IssueIngestRequest(BaseModel):
     final_score: float | None = None
     score_reason: str | None = None
     recommended_action: str | None = None
+    community_reaction_summary: str | None = None
+    community_reaction_bullets: list[str] = Field(default_factory=list)
     slug: str | None = None
     is_published: bool = True
 

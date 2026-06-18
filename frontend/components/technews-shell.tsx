@@ -763,6 +763,29 @@ export function TechNewsShell() {
                 </div>
               ) : null}
 
+              {active.community_reaction_summary || active.community_reaction_bullets.length ? (
+                <section className={`rounded-xl border px-3.5 py-2.5 md:px-4 ${themeClass.panelSoft}`}>
+                  <div className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${themeClass.sub}`}>커뮤니티 반응</div>
+                  {active.community_reaction_summary ? (
+                    <p className={`mt-1.5 text-[15px] leading-[1.65] md:text-sm ${themeClass.bodyText}`}>
+                      <HighlightText text={active.community_reaction_summary} query={searchQuery} markClassName={themeClass.searchMark} />
+                    </p>
+                  ) : null}
+                  {active.community_reaction_bullets.length ? (
+                    <ul className={`mt-2 space-y-1.5 text-[15px] leading-[1.6] md:text-sm ${themeClass.bodyText}`}>
+                      {active.community_reaction_bullets.map((item, index) => (
+                        <li key={`${item}-${index}`} className="flex gap-2">
+                          <span className={`mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full ${theme === 'dark' ? 'bg-slate-400' : 'bg-slate-500'}`} />
+                          <span>
+                            <HighlightText text={item} query={searchQuery} markClassName={themeClass.searchMark} />
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ) : null}
+
               {parsed.intro.length > 0 ? (
                 <div className={`space-y-1.5 rounded-xl border px-3.5 py-2.5 text-[15px] leading-[1.65] md:px-4 ${themeClass.panel} ${themeClass.bodyText}`}>
                   {parsed.intro.map((line, index) => (
