@@ -21,12 +21,23 @@ def _coerce_issue_date(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def _normalize_community_reaction(payload: dict) -> tuple[str, list[str]]:
+    summary = str(payload.get('community_reaction_summary') or '').strip()[:160]
+    bullets = [
+        str(item).strip()
+        for item in payload.get('community_reaction_bullets', [])
+        if str(item).strip()
+    ][:2]
+    return summary, bullets
+
+
 def main():
     payload = json.load(sys.stdin)
     issue_date = _coerce_issue_date(payload['issue_date'])
     title = payload['title']
     summary = payload['summary']
     markdown = payload['markdown'].strip() + '\n'
+    community_reaction_summary, community_reaction_bullets = _normalize_community_reaction(payload)
 
     structured = build_fallback_structured_summary(summary, markdown=markdown)
     if payload.get('short_summary'):
@@ -72,10 +83,10 @@ def main():
         '''INSERT INTO issues (
              slug, title, summary, short_summary, impact_summary, action_items_json, tags_json, radar_category, radar_status,
              interest_score, project_score, novelty_score, actionability_score, credibility_score, community_score, final_score,
-             score_reason, recommended_action,
+             score_reason, recommended_action, community_reaction_summary, community_reaction_bullets_json,
              issue_date, year, month, markdown_path, is_published, created_at, updated_at
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
            ON CONFLICT(slug) DO UPDATE SET
              title=excluded.title,
              summary=excluded.summary,
@@ -94,13 +105,40 @@ def main():
              final_score=excluded.final_score,
              score_reason=excluded.score_reason,
              recommended_action=excluded.recommended_action,
+             community_reaction_summary=excluded.community_reaction_summary,
+             community_reaction_bullets_json=excluded.community_reaction_bullets_json,
              issue_date=excluded.issue_date,
              year=excluded.year,
              month=excluded.month,
              markdown_path=excluded.markdown_path,
              is_published=1,
              updated_at=datetime('now')''',
-        (slug, title, summary, structured.short_summary, structured.impact_summary, json.dumps(structured.action_items, ensure_ascii=False), json.dumps(structured.tags, ensure_ascii=False), structured.radar_category, structured.radar_status, score.interest_score, score.project_score, score.novelty_score, score.actionability_score, score.credibility_score, score.community_score, score.final_score, score.reason, score.recommended_action, issue_date.isoformat(), issue_date.year, issue_date.month, rel_path),
+        (
+            slug,
+            title,
+            summary,
+            structured.short_summary,
+            structured.impact_summary,
+            json.dumps(structured.action_items, ensure_ascii=False),
+            json.dumps(structured.tags, ensure_ascii=False),
+            structured.radar_category,
+            structured.radar_status,
+            score.interest_score,
+            score.project_score,
+            score.novelty_score,
+            score.actionability_score,
+            score.credibility_score,
+            score.community_score,
+            score.final_score,
+            score.reason,
+            score.recommended_action,
+            community_reaction_summary,
+            json.dumps(community_reaction_bullets, ensure_ascii=False),
+            issue_date.isoformat(),
+            issue_date.year,
+            issue_date.month,
+            rel_path,
+        ),
     )
     conn.commit()
     conn.close()

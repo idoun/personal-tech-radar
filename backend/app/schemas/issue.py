@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -92,6 +92,35 @@ class IssueSearchResponse(BaseModel):
     query: str
     total: int
     items: list[IssueSearchResult]
+
+
+class ArticleFavoriteItem(BaseModel):
+    id: int
+    issue_slug: str
+    issue_date: date
+    article_key: str
+    article_title: str
+    article_index: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ArticleFavoriteUpsertRequest(BaseModel):
+    issue_slug: str = Field(min_length=1, max_length=120)
+    issue_date: date
+    article_title: str = Field(min_length=1, max_length=255)
+    article_index: int = Field(ge=0, le=200)
+
+
+class ArticleFavoriteDeleteRequest(BaseModel):
+    issue_slug: str = Field(min_length=1, max_length=120)
+    article_title: str = Field(min_length=1, max_length=255)
+    article_index: int = Field(ge=0, le=200)
+
+
+class ArticleFavoriteDeleteResponse(BaseModel):
+    ok: bool = True
 
 
 class IssueIngestRequest(BaseModel):

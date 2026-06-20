@@ -81,6 +81,16 @@ export type IssueSearchResponse = {
   items: IssueSearchResult[];
 };
 
+export type ArticleFavorite = {
+  id: number;
+  issue_slug: string;
+  issue_date: string;
+  article_key: string;
+  article_title: string;
+  article_index: number;
+  created_at: string;
+};
+
 export type IssueDetail = IssueListItem & {
   markdown: string;
   html: string;

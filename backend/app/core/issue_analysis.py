@@ -19,6 +19,8 @@ class ParsedArticleCard:
     summary: str
     source: str | None = None
     geeknews: str | None = None
+    community_reaction: str | None = None
+    community_points: list[str] | None = None
 
 
 @dataclass
@@ -33,6 +35,10 @@ class IssueAnalysis:
             parts.append(card.title)
             if card.summary:
                 parts.append(card.summary)
+            if card.community_reaction:
+                parts.append(card.community_reaction)
+            if card.community_points:
+                parts.extend(card.community_points)
             if card.source:
                 parts.append(card.source)
             if card.geeknews:
@@ -90,7 +96,7 @@ def parse_issue_markdown(markdown: str) -> IssueAnalysis:
             raw_title = heading.group(1).strip()
             cleaned_title = raw_title.replace('🤖', '').strip()
             cleaned_title = re.sub(r'^\*\*(.+)\*\*$', r'\1', cleaned_title)
-            current = ParsedArticleCard(title=cleaned_title, summary='')
+            current = ParsedArticleCard(title=cleaned_title, summary='', community_points=[])
             continue
 
         if current is None:
@@ -100,6 +106,12 @@ def parse_issue_markdown(markdown: str) -> IssueAnalysis:
 
         if line.startswith('요약:'):
             current.summary = line.replace('요약:', '', 1).strip()
+        elif line.startswith('- 댓글 반응:') or line.startswith('- 커뮤니티 반응:'):
+            current.community_reaction = re.sub(r'^- (댓글|커뮤니티) 반응:\s*', '', line).strip()
+        elif line.startswith('- 댓글 포인트:') or line.startswith('- 커뮤니티 포인트:'):
+            point = re.sub(r'^- (댓글|커뮤니티) 포인트:\s*', '', line).strip()
+            if point:
+                current.community_points = [*(current.community_points or []), point]
         elif line.startswith('- 원문:'):
             current.source = line.replace('- 원문:', '', 1).strip()
         elif line.startswith('- GeekNews:'):

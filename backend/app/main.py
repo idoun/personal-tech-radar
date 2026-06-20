@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes_issues import router as issues_router
 from app.core.config import settings
 from app.db.session import Base, engine
+from app.models.article_favorite import ArticleFavorite
 from app.models.issue import Issue
 
 app = FastAPI(title=settings.app_name)
@@ -54,6 +55,28 @@ def ensure_tables():
         for column, sql in migrations.items():
             if column not in existing:
                 conn.execute(sql)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS article_favorites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                issue_slug TEXT NOT NULL,
+                issue_date DATE NOT NULL,
+                article_key TEXT NOT NULL,
+                article_title TEXT NOT NULL,
+                article_index INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS ix_article_favorites_user_issue_key '
+            'ON article_favorites(user_id, issue_slug, article_key)'
+        )
+        conn.execute(
+            'CREATE INDEX IF NOT EXISTS ix_article_favorites_user_created_at '
+            'ON article_favorites(user_id, created_at)'
+        )
         conn.commit()
 
     Base.metadata.create_all(bind=engine)

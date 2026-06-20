@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { fetchAuthSession, fetchIssue, fetchIssueGroups, fetchIssueSearch, fetchLatestIssue, loginWithPassword, logoutSharedSession } from '@/lib/api';
-import type { AuthUser, IssueDetail, IssueGroupMonth, IssueListItem, IssueSearchResult } from '@/lib/types';
+import { addArticleFavorite, fetchArticleFavorites, fetchAuthSession, fetchIssue, fetchIssueGroups, fetchIssueSearch, fetchLatestIssue, loginWithPassword, logoutSharedSession, removeArticleFavorite } from '@/lib/api';
+import { buildArticleDomId, buildArticleKey } from '@/lib/article-keys';
+import type { ArticleFavorite, AuthUser, IssueDetail, IssueGroupMonth, IssueListItem, IssueSearchResult } from '@/lib/types';
 import { TechNewsAuthForm } from './technews-auth-form';
 
 type ThemeMode = 'dark' | 'light';
@@ -41,8 +42,24 @@ type ArticleCard = {
   summary: string;
   source?: string;
   geeknews?: string;
+  communityReaction?: string;
+  communityPoints: string[];
   ai: boolean;
 };
+
+type ArticleCardWithMeta = ArticleCard & {
+  articleKey: string;
+  articleIndex: number;
+  domId: string;
+};
+
+function BookmarkIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.7" className="h-4 w-4">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 3.75h9.5a1 1 0 0 1 1 1v11.5l-5.75-3-5.75 3V4.75a1 1 0 0 1 1-1Z" />
+    </svg>
+  );
+}
 
 function buildTopSummary(detail: IssueDetail, _cards: ArticleCard[]) {
   return detail.short_summary || buildFallbackSummary(detail.summary);
@@ -71,6 +88,7 @@ function parseIssueBody(markdown: string) {
       current = {
         title: cleanedTitle.replace(/^\*\*(.+)\*\*$/, '$1'),
         summary: '',
+        communityPoints: [],
         ai: rawTitle.includes('🤖') || /\*\*/.test(rawTitle),
       };
       continue;
@@ -85,6 +103,13 @@ function parseIssueBody(markdown: string) {
 
     if (line.startsWith('요약:')) {
       current.summary = line.replace('요약:', '').trim();
+    } else if (line.startsWith('- 댓글 반응:') || line.startsWith('- 커뮤니티 반응:')) {
+      current.communityReaction = line.replace(/^- (댓글|커뮤니티) 반응:/, '').trim();
+    } else if (line.startsWith('- 댓글 포인트:') || line.startsWith('- 커뮤니티 포인트:')) {
+      const point = line.replace(/^- (댓글|커뮤니티) 포인트:/, '').trim();
+      if (point) {
+        current.communityPoints.push(point);
+      }
     } else if (line.startsWith('- 원문:')) {
       current.source = line.replace('- 원문:', '').trim();
     } else if (line.startsWith('- GeekNews:')) {
@@ -284,6 +309,11 @@ export function TechNewsShell() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [groups, setGroups] = useState<IssueGroupMonth[]>([]);
   const [active, setActive] = useState<IssueDetail | null>(null);
+  const [favorites, setFavorites] = useState<ArticleFavorite[]>([]);
+  const [favoritesExpanded, setFavoritesExpanded] = useState(false);
+  const [favoritePendingKey, setFavoritePendingKey] = useState<string | null>(null);
+  const [favoriteNotice, setFavoriteNotice] = useState<string | null>(null);
+  const [pendingArticleKey, setPendingArticleKey] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<IssueSearchResult[]>([]);
@@ -324,8 +354,9 @@ export function TechNewsShell() {
   useEffect(() => {
     async function loadIssueData() {
       try {
-        const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
+        const [groupData, latest, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchLatestIssue(), fetchArticleFavorites()]);
         applyGroupedIssues(groupData, latest);
+        setFavorites(favoriteItems);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : '불러오지 못했습니다.');
@@ -427,8 +458,9 @@ export function TechNewsShell() {
       }
       setAuthUser(session.user);
       setError(null);
-      const [groupData, latest] = await Promise.all([fetchIssueGroups(), fetchLatestIssue()]);
+      const [groupData, latest, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchLatestIssue(), fetchArticleFavorites()]);
       applyGroupedIssues(groupData, latest);
+      setFavorites(favoriteItems);
     } finally {
       setLoading(false);
     }
@@ -446,9 +478,14 @@ export function TechNewsShell() {
     }
     setGroups([]);
     setActive(null);
+    setFavorites([]);
     setSearchInput('');
     setSearchQuery('');
     setSearchResults([]);
+    setFavoritesExpanded(false);
+    setFavoritePendingKey(null);
+    setFavoriteNotice(null);
+    setPendingArticleKey(null);
     setError(null);
     setLoading(false);
     setSettingsOpen(false);
@@ -456,8 +493,25 @@ export function TechNewsShell() {
   }
 
   const parsed = active ? parseIssueBody(active.markdown) : { intro: [], cards: [] };
+  const articleCards = useMemo<ArticleCardWithMeta[]>(
+    () =>
+      active
+        ? parsed.cards.map((card, index) => {
+            const articleKey = buildArticleKey(active.slug, card.title, index);
+            return {
+              ...card,
+              articleIndex: index,
+              articleKey,
+              domId: buildArticleDomId(articleKey),
+            };
+          })
+        : [],
+    [active, parsed.cards],
+  );
+  const favoriteKeySet = useMemo(() => new Set(favorites.map((item) => item.article_key)), [favorites]);
   const topSummary = active ? buildTopSummary(active, parsed.cards) : '';
   const topItems = useMemo(() => buildTopItems(groups), [groups]);
+  const visibleFavorites = useMemo(() => favorites.slice(0, 10), [favorites]);
   const grouped = useMemo(
     () =>
       groups.map((group) => ({
@@ -471,6 +525,74 @@ export function TechNewsShell() {
   );
   const themeClass = getThemeClass(theme);
   const isSearchMode = searchQuery.length > 0;
+
+  useEffect(() => {
+    if (!favoriteNotice) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setFavoriteNotice(null), 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [favoriteNotice]);
+
+  useEffect(() => {
+    if (!pendingArticleKey) {
+      return;
+    }
+    const element = document.getElementById(buildArticleDomId(pendingArticleKey));
+    if (!element) {
+      return;
+    }
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    element.classList.add('ring-2', 'ring-rose-400', 'ring-offset-2', 'ring-offset-transparent');
+    const timeoutId = window.setTimeout(() => {
+      element.classList.remove('ring-2', 'ring-rose-400', 'ring-offset-2', 'ring-offset-transparent');
+      setPendingArticleKey(null);
+    }, 1800);
+    return () => window.clearTimeout(timeoutId);
+  }, [articleCards, pendingArticleKey]);
+
+  async function handleToggleFavorite(card: ArticleCardWithMeta) {
+    if (!active) {
+      return;
+    }
+
+    setFavoritePendingKey(card.articleKey);
+    try {
+      if (favoriteKeySet.has(card.articleKey)) {
+        await removeArticleFavorite({
+          issue_slug: active.slug,
+          article_title: card.title,
+          article_index: card.articleIndex,
+        });
+        setFavorites((prev) => prev.filter((item) => item.article_key !== card.articleKey));
+        setFavoriteNotice('즐겨찾기에서 제거됨');
+      } else {
+        const saved = await addArticleFavorite({
+          issue_slug: active.slug,
+          issue_date: active.issue_date,
+          article_title: card.title,
+          article_index: card.articleIndex,
+        });
+        setFavorites((prev) => [saved, ...prev.filter((item) => item.article_key !== saved.article_key)]);
+        setFavoritesExpanded(true);
+        setFavoriteNotice('즐겨찾기에 저장됨');
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '즐겨찾기를 저장하지 못했습니다.');
+    } finally {
+      setFavoritePendingKey(null);
+    }
+  }
+
+  async function handleOpenFavorite(item: ArticleFavorite) {
+    setPendingArticleKey(item.article_key);
+    setMobileSidebarOpen(false);
+    if (active?.slug === item.issue_slug) {
+      return;
+    }
+    await handleOpen(item.issue_slug);
+  }
 
   if (!sessionChecked || (!authUser && loading)) {
     return <div className={`flex min-h-screen items-center justify-center ${themeClass.app}`}><div className={themeClass.sub}>세션 확인 중...</div></div>;
@@ -523,6 +645,45 @@ export function TechNewsShell() {
           </div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5">
+          {!isSearchMode ? (
+            <div className={`mb-2.5 rounded-xl border ${themeClass.sidePanel}`}>
+              <button
+                type="button"
+                onClick={() => setFavoritesExpanded((prev) => !prev)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left"
+              >
+                <span className={`text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>즐겨찾기 {favorites.length}</span>
+                <span className={`text-xs ${themeClass.sub}`}>{favoritesExpanded ? '접기' : '펼치기'}</span>
+              </button>
+              {favoritesExpanded ? (
+                <div className={`border-t px-1.5 py-1 ${themeClass.monthDivider}`}>
+                  {visibleFavorites.length ? (
+                    visibleFavorites.map((item) => {
+                      const activeCard = active?.slug === item.issue_slug && pendingArticleKey === item.article_key;
+                      return (
+                        <button
+                          key={`favorite-${item.id}`}
+                          type="button"
+                          onClick={() => {
+                            void handleOpenFavorite(item);
+                          }}
+                          className={`mb-1 w-full rounded-lg border px-3 py-2 text-left transition ${activeCard ? themeClass.monthItemActive : themeClass.sidePanelItem}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className={`text-xs ${themeClass.sub}`}>{formatLongDate(item.issue_date)}</div>
+                            <span className={`rounded-full border px-2 py-0.5 text-[11px] ${themeClass.pill}`}>저장됨</span>
+                          </div>
+                          <div className={`mt-1 line-clamp-2 text-[15px] font-medium md:text-sm ${themeClass.strongText}`}>{item.article_title}</div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className={`px-3 py-5 text-sm ${themeClass.sub}`}>저장한 기사가 아직 없습니다.</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {isSearchMode ? (
             <div className={`mb-2.5 rounded-xl border ${themeClass.sidePanel}`}>
               <div className={`border-b px-3 py-2 text-xs uppercase tracking-[0.2em] ${themeClass.monthDivider} ${themeClass.sub}`}>
@@ -795,17 +956,66 @@ export function TechNewsShell() {
               ) : null}
 
               <div className="space-y-2">
-                {parsed.cards.map((card, index) => (
-                  <section key={`${card.title}-${index}`} className={`rounded-xl border p-3.5 md:p-4 ${themeClass.panelSoft}`}>
-                    <h3 className={`text-[1.1rem] font-semibold leading-6 md:text-[1.15rem] md:leading-7 ${themeClass.title}`}>
-                      {card.ai ? <span className="mr-2">🤖</span> : null}
-                      <span className={card.ai ? 'font-bold' : ''}>
-                        <HighlightText text={card.title} query={searchQuery} markClassName={themeClass.searchMark} />
-                      </span>
-                    </h3>
+                {articleCards.map((card) => {
+                  const isFavorite = favoriteKeySet.has(card.articleKey);
+                  const isFavoriteBusy = favoritePendingKey === card.articleKey;
+                  return (
+                  <section
+                    key={card.articleKey}
+                    id={card.domId}
+                    className={`scroll-mt-20 rounded-xl border p-3.5 md:p-4 ${isFavorite ? 'border-rose-300/60' : ''} ${themeClass.panelSoft}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className={`min-w-0 text-[1.1rem] font-semibold leading-6 md:text-[1.15rem] md:leading-7 ${themeClass.title}`}>
+                        {card.ai ? <span className="mr-2">🤖</span> : null}
+                        <span className={card.ai ? 'font-bold' : ''}>
+                          <HighlightText text={card.title} query={searchQuery} markClassName={themeClass.searchMark} />
+                        </span>
+                      </h3>
+                      <button
+                        type="button"
+                        disabled={isFavoriteBusy}
+                        onClick={() => {
+                          void handleToggleFavorite(card);
+                        }}
+                        className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                          isFavorite
+                            ? theme === 'dark'
+                              ? 'border-rose-400/50 bg-rose-500/15 text-rose-100'
+                              : 'border-rose-300 bg-rose-50 text-rose-700'
+                            : themeClass.ghostButton
+                        } ${isFavoriteBusy ? 'opacity-70' : ''}`}
+                        aria-label={isFavorite ? '즐겨찾기 제거' : '즐겨찾기 저장'}
+                      >
+                        <BookmarkIcon filled={isFavorite} />
+                        <span>{isFavorite ? '저장됨' : '저장'}</span>
+                      </button>
+                    </div>
                     <p className={`mt-1.5 text-[15px] leading-[1.65] ${themeClass.bodyText}`}>
                       <HighlightText text={card.summary} query={searchQuery} markClassName={themeClass.searchMark} />
                     </p>
+                    {card.communityReaction || card.communityPoints.length ? (
+                      <div className={`mt-3 rounded-xl border px-3 py-2.5 ${themeClass.panel}`}>
+                        <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${themeClass.sub}`}>댓글 반응</div>
+                        {card.communityReaction ? (
+                          <p className={`mt-1.5 text-[15px] leading-[1.65] ${themeClass.bodyText}`}>
+                            <HighlightText text={card.communityReaction} query={searchQuery} markClassName={themeClass.searchMark} />
+                          </p>
+                        ) : null}
+                        {card.communityPoints.length ? (
+                          <ul className={`mt-2 space-y-1.5 text-[15px] leading-[1.6] md:text-sm ${themeClass.bodyText}`}>
+                            {card.communityPoints.map((item, itemIndex) => (
+                              <li key={`${item}-${itemIndex}`} className="flex gap-2">
+                                <span className={`mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full ${theme === 'dark' ? 'bg-slate-400' : 'bg-slate-500'}`} />
+                                <span>
+                                  <HighlightText text={item} query={searchQuery} markClassName={themeClass.searchMark} />
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {card.source ? (
                         <a
@@ -829,12 +1039,20 @@ export function TechNewsShell() {
                       ) : null}
                     </div>
                   </section>
-                ))}
+                );})}
               </div>
             </article>
           ) : null}
         </div>
       </main>
+
+      {favoriteNotice ? (
+        <div className="pointer-events-none fixed right-4 top-4 z-50">
+          <div className={`rounded-full border px-4 py-2 text-sm shadow-lg ${theme === 'dark' ? 'border-rose-400/35 bg-slate-900 text-rose-100' : 'border-rose-200 bg-white text-rose-700'}`}>
+            {favoriteNotice}
+          </div>
+        </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4">

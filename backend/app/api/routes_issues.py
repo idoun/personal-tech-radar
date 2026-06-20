@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from markdown_it import MarkdownIt
 from sqlalchemy.orm import Session
 
+from app.core.article_keys import build_article_key
 from app.core.auth import require_authenticated_user
 from app.core.config import settings
 from app.core.delivery import build_delivery_log_result, build_delivery_preview
@@ -13,8 +14,13 @@ from app.core.profile import load_tech_radar_profile
 from app.core.scoring import ArticleScoreResult, build_fallback_score
 from app.core.summary import StructuredSummary, build_fallback_structured_summary, parse_structured_summary
 from app.db.session import get_db
+from app.models.article_favorite import ArticleFavorite
 from app.models.issue import Issue
 from app.schemas.issue import (
+    ArticleFavoriteDeleteRequest,
+    ArticleFavoriteDeleteResponse,
+    ArticleFavoriteItem,
+    ArticleFavoriteUpsertRequest,
     DeliveryLogPayload,
     DeliveryPreviewPayload,
     IssueDeliveryLogRequest,
@@ -115,6 +121,10 @@ def _issue_detail(issue: Issue) -> IssueDetail:
     )
     detail.delivery_preview = DeliveryPreviewPayload.model_validate(preview.model_dump())
     return detail
+
+
+def _favorite_item(record: ArticleFavorite) -> ArticleFavoriteItem:
+    return ArticleFavoriteItem.model_validate(record)
 
 
 def _normalize_search_terms(query: str) -> list[str]:
@@ -253,6 +263,76 @@ def _require_ingest_token(x_ingest_token: str | None = Header(default=None)):
         raise HTTPException(status_code=503, detail='Ingest token is not configured')
     if x_ingest_token != settings.ingest_token:
         raise HTTPException(status_code=401, detail='Invalid ingest token')
+
+
+@router.get('/article-favorites', response_model=list[ArticleFavoriteItem])
+def list_article_favorites(_user_id: int = Depends(require_authenticated_user), db: Session = Depends(get_db)):
+    favorites = (
+        db.query(ArticleFavorite)
+        .filter(ArticleFavorite.user_id == _user_id)
+        .order_by(ArticleFavorite.created_at.desc(), ArticleFavorite.id.desc())
+        .all()
+    )
+    return [_favorite_item(record) for record in favorites]
+
+
+@router.post('/article-favorites', response_model=ArticleFavoriteItem)
+def create_article_favorite(
+    payload: ArticleFavoriteUpsertRequest,
+    _user_id: int = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    article_key = build_article_key(payload.issue_slug, payload.article_title, payload.article_index)
+    favorite = (
+        db.query(ArticleFavorite)
+        .filter(
+            ArticleFavorite.user_id == _user_id,
+            ArticleFavorite.issue_slug == payload.issue_slug,
+            ArticleFavorite.article_key == article_key,
+        )
+        .first()
+    )
+
+    if favorite is None:
+        favorite = ArticleFavorite(
+            user_id=_user_id,
+            issue_slug=payload.issue_slug,
+            issue_date=payload.issue_date,
+            article_key=article_key,
+            article_title=payload.article_title,
+            article_index=payload.article_index,
+        )
+        db.add(favorite)
+    else:
+        favorite.issue_date = payload.issue_date
+        favorite.article_title = payload.article_title
+        favorite.article_index = payload.article_index
+
+    db.commit()
+    db.refresh(favorite)
+    return _favorite_item(favorite)
+
+
+@router.delete('/article-favorites', response_model=ArticleFavoriteDeleteResponse)
+def delete_article_favorite(
+    payload: ArticleFavoriteDeleteRequest,
+    _user_id: int = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    article_key = build_article_key(payload.issue_slug, payload.article_title, payload.article_index)
+    favorite = (
+        db.query(ArticleFavorite)
+        .filter(
+            ArticleFavorite.user_id == _user_id,
+            ArticleFavorite.issue_slug == payload.issue_slug,
+            ArticleFavorite.article_key == article_key,
+        )
+        .first()
+    )
+    if favorite is not None:
+        db.delete(favorite)
+        db.commit()
+    return ArticleFavoriteDeleteResponse()
 
 
 @router.get('', response_model=list[IssueGroupMonth])

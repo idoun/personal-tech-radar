@@ -1,4 +1,4 @@
-import type { AuthSession, IssueDetail, IssueGroupMonth, IssueSearchResponse } from './types';
+import type { ArticleFavorite, AuthSession, IssueDetail, IssueGroupMonth, IssueSearchResponse } from './types';
 
 function getSiteOrigin() {
   if (typeof window === 'undefined') {
@@ -129,6 +129,24 @@ export function fetchIssue(slug: string) {
 
 export function fetchIssueSearch(query: string) {
   return apiFetch<IssueSearchResponse>(`/api/issues/search?q=${encodeURIComponent(query)}`);
+}
+
+export function fetchArticleFavorites() {
+  return apiFetch<ArticleFavorite[]>('/api/issues/article-favorites');
+}
+
+export function addArticleFavorite(payload: { issue_slug: string; issue_date: string; article_title: string; article_index: number }) {
+  return apiFetch<ArticleFavorite>('/api/issues/article-favorites', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function removeArticleFavorite(payload: { issue_slug: string; article_title: string; article_index: number }) {
+  return apiFetch<{ ok: boolean }>('/api/issues/article-favorites', {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function fetchAuthSession() {
