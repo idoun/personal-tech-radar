@@ -10,6 +10,12 @@ import { TechNewsAuthForm } from './technews-auth-form';
 type ThemeMode = 'dark' | 'light';
 
 const THEME_STORAGE_KEY = 'technews-theme';
+const RADAR_STATUS_GUIDE = [
+  { label: 'Adopt', description: '이미 써볼 만하거나 바로 적용 후보인 상태' },
+  { label: 'Trial', description: '짧은 실험이나 비교 검토를 권하는 상태' },
+  { label: 'Assess', description: '지켜보며 맥락을 더 모으는 상태' },
+  { label: 'Hold', description: '당장 우선순위는 낮게 두는 상태' },
+] as const;
 
 function formatLongDate(value: string) {
   const parsed = new Date(`${value}T00:00:00+09:00`);
@@ -156,6 +162,18 @@ function metricTone(score: number) {
   if (score >= 8.5) return 'bg-gradient-to-r from-rose-400 via-pink-400 to-orange-300';
   if (score >= 7) return 'bg-gradient-to-r from-amber-300 via-orange-300 to-rose-300';
   return 'bg-gradient-to-r from-slate-500 to-slate-400';
+}
+
+function guideChipTone(theme: ThemeMode) {
+  return theme === 'dark'
+    ? 'border-slate-700 bg-slate-900/80 text-slate-100'
+    : 'border-slate-300 bg-white text-slate-800';
+}
+
+function importantChipTone(theme: ThemeMode) {
+  return theme === 'dark'
+    ? 'border-rose-500/30 bg-rose-500/15 text-rose-200'
+    : 'border-rose-200 bg-rose-50 text-rose-700';
 }
 
 function getThemeClass(theme: ThemeMode) {
@@ -836,6 +854,32 @@ export function TechNewsShell() {
           {error ? <div className={`rounded-xl border px-4 py-3 text-[15px] md:text-sm ${themeClass.error}`}>{error}</div> : null}
           {!loading && active ? (
             <article className={`space-y-2.5 rounded-2xl border p-3.5 md:space-y-3 md:p-4 ${themeClass.article}`}>
+              <section className={`rounded-xl border px-3.5 py-3 md:px-4 ${themeClass.panel}`}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${themeClass.sub}`}>읽는 법</div>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${guideChipTone(theme)}`}>🤖 AI/에이전트 관련 기사</span>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${scoreTone(active.score.final_score)}`}>중요도 0-10</span>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${radarTone(active.radar_status, theme)}`}>Radar 상태</span>
+                  {active.delivery_preview?.decision.important ? (
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${importantChipTone(theme)}`}>중요 알림 후보</span>
+                  ) : null}
+                </div>
+                <div className={`mt-2 grid gap-2 text-[15px] leading-[1.6] md:grid-cols-2 md:text-sm ${themeClass.bodyText}`}>
+                  <p>중요도는 내 관심사와 프로젝트 키워드, 실험 가능성까지 반영한 개인 기준 점수야.</p>
+                  <p>중요 알림 후보는 중요도가 높아서 텔레그램 같은 빠른 채널로 따로 보낼 만한 글이라는 뜻이야.</p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {RADAR_STATUS_GUIDE.map((item) => (
+                    <div key={item.label} className={`rounded-xl border px-3 py-2 text-sm ${themeClass.panelSoft}`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${radarTone(item.label, theme)}`}>{item.label}</span>
+                        <span className={themeClass.bodyText}>{item.description}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <div className="grid gap-2 lg:grid-cols-[1.45fr_0.95fr]">
                 <div className={`rounded-xl border px-3.5 py-2.5 md:px-4 ${themeClass.summaryBox}`}>
                   <div className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${themeClass.summaryEyebrow}`}>10초 요약</div>
@@ -850,7 +894,7 @@ export function TechNewsShell() {
                       {active.radar_category} · {active.radar_status}
                     </span>
                     {active.delivery_preview?.decision.important ? (
-                      <span className="rounded-full border border-rose-500/30 bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-200">중요 알림 후보</span>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${importantChipTone(theme)}`}>중요 알림 후보</span>
                     ) : null}
                   </div>
                 </div>
