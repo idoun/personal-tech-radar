@@ -341,7 +341,7 @@ export function TechNewsShell() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [theme, setTheme] = useState<ThemeMode>('light');
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
