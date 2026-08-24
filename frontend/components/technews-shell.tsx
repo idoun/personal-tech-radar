@@ -43,6 +43,47 @@ function displayTitle(title: string) {
   return title.replace(/^((?:GeekNews)\s+)어제자\s+요약\s*-\s*/u, '$1').trim();
 }
 
+function readIssueDateFromUrl() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const value = new URLSearchParams(window.location.search).get('date')?.trim() || null;
+  if (!value) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error('date는 YYYY-MM-DD 형식이어야 합니다.');
+  }
+
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new Error('유효하지 않은 날짜입니다.');
+  }
+
+  return value;
+}
+
+function fetchIssueFromUrl() {
+  const requestedDate = readIssueDateFromUrl();
+  return requestedDate ? fetchIssue(requestedDate) : fetchLatestIssue();
+}
+
+function updateIssueUrl(slug: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('date') === slug) {
+    return;
+  }
+
+  url.searchParams.set('date', slug);
+  window.history.pushState({ date: slug }, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
 type ArticleCard = {
   title: string;
   summary: string;
@@ -357,14 +398,14 @@ export function TechNewsShell() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
-  function applyGroupedIssues(groupData: IssueGroupMonth[], latest: IssueDetail) {
+  function applyGroupedIssues(groupData: IssueGroupMonth[], selected: IssueDetail) {
     setGroups(groupData);
-    setActive(latest);
+    setActive(selected);
     const initial: Record<string, boolean> = {};
-    const latestKey = groupData[0] ? `${groupData[0].year}-${groupData[0].month}` : null;
+    const selectedKey = `${selected.year}-${selected.month}`;
     for (const group of groupData) {
       const key = `${group.year}-${group.month}`;
-      initial[key] = key === latestKey;
+      initial[key] = key === selectedKey;
     }
     setExpanded(initial);
   }
@@ -372,8 +413,8 @@ export function TechNewsShell() {
   useEffect(() => {
     async function loadIssueData() {
       try {
-        const [groupData, latest, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchLatestIssue(), fetchArticleFavorites()]);
-        applyGroupedIssues(groupData, latest);
+        const [groupData, selected, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchIssueFromUrl(), fetchArticleFavorites()]);
+        applyGroupedIssues(groupData, selected);
         setFavorites(favoriteItems);
         setError(null);
       } catch (err) {
@@ -457,11 +498,32 @@ export function TechNewsShell() {
     try {
       const issue = await fetchIssue(slug);
       setActive(issue);
+      updateIssueUrl(issue.slug);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : '문서를 열지 못했습니다.');
     }
   }
+
+  useEffect(() => {
+    if (!authUser) {
+      return;
+    }
+
+    const handlePopState = () => {
+      void fetchIssueFromUrl()
+        .then((issue) => {
+          setActive(issue);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : '문서를 열지 못했습니다.');
+        });
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [authUser]);
 
   async function handleLogin(email: string, password: string) {
     setLoading(true);
@@ -476,8 +538,8 @@ export function TechNewsShell() {
       }
       setAuthUser(session.user);
       setError(null);
-      const [groupData, latest, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchLatestIssue(), fetchArticleFavorites()]);
-      applyGroupedIssues(groupData, latest);
+      const [groupData, selected, favoriteItems] = await Promise.all([fetchIssueGroups(), fetchIssueFromUrl(), fetchArticleFavorites()]);
+      applyGroupedIssues(groupData, selected);
       setFavorites(favoriteItems);
     } finally {
       setLoading(false);
