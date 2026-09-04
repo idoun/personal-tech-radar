@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ingest_token: str = ''
     auth_secret_key: str = ''
     auth_cookie_name: str = 'idounai_session'
+    cors_allowed_origins: str = 'http://127.0.0.1:3012,http://localhost:3012'
     tech_radar_profile_path: str = 'config/tech-radar-profile.yaml'
     tech_radar_min_telegram_score: float = 7.0
     tech_radar_important_score: float = 8.5

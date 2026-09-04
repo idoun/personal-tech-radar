@@ -483,7 +483,11 @@ def get_issue(slug: str, _user_id: int = Depends(require_authenticated_user), db
 
 
 @router.get('/{slug}/delivery-preview', response_model=DeliveryPreviewPayload)
-def get_issue_delivery_preview(slug: str, db: Session = Depends(get_db)):
+def get_issue_delivery_preview(
+    slug: str,
+    _user_id: int = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     issue = db.query(Issue).filter(Issue.slug == slug, Issue.is_published.is_(True)).first()
     if not issue:
         raise HTTPException(status_code=404, detail='Issue not found')
@@ -494,7 +498,12 @@ def get_issue_delivery_preview(slug: str, db: Session = Depends(get_db)):
 
 
 @router.post('/{slug}/delivery-log', response_model=DeliveryLogPayload)
-def record_issue_delivery_log(slug: str, payload: IssueDeliveryLogRequest, db: Session = Depends(get_db)):
+def record_issue_delivery_log(
+    slug: str,
+    payload: IssueDeliveryLogRequest,
+    _user_id: int = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     issue = db.query(Issue).filter(Issue.slug == slug).first()
     if not issue:
         raise HTTPException(status_code=404, detail='Issue not found')
