@@ -1,0 +1,15 @@
+flowchart LR
+    Browser["Browser<br/>authenticated reader"] --> Nginx["nginx<br/>/technews · /technews-api"]
+    Nginx --> Web["Next.js frontend<br/>archive · search · detail"]
+    Nginx --> API["FastAPI backend<br/>issue APIs · favorites<br/>summary + profile scoring"]
+    Web --> API
+
+    Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
+    Auth -. "shared cookie + HS256 secret contract" .-> API
+
+    Publisher["External GeekNews / prepared issue<br/>geeknews_publish.py → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
+    Publisher --> DB[("SQLite technews.db<br/>issues · article_favorites")]
+    API --> Content
+    API --> DB
+
+    API -. "delivery preview + log" .-> Delivery["Telegram-ready delivery boundary<br/>transport outside repo<br/>e.g. OpenClaw sender"]
