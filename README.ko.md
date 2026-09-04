@@ -12,6 +12,16 @@ FastAPI 백엔드와 `/technews` 경로의 Next.js 리더 UI로 아카이브를 
 
 [English README](README.md) · [아키텍처 다이어그램 소스](docs/architecture.mmd)
 
+## 포트폴리오 역할
+
+Personal Tech Radar는 전체 platform story의 **Domain Data / Scoring /
+Publishing Service**입니다. 준비된 issue ingestion, Markdown content,
+metadata storage, profile 기반 scoring, search, archive, delivery decision
+data를 소유합니다. `traceable-deep-agents-sample`은 게시된 issue를 read-only
+domain evidence로 사용하며, Agent runtime policy와 orchestration은 이곳에
+있지 않습니다. Crawler, LLM summarizer, Telegram/OpenClaw transport는 외부
+경계입니다.
+
 ## 핵심 아이디어
 
 - `geeknews_publish.py`와 `ingest_issue.py`를 통한 준비된 Markdown 수집
@@ -22,6 +32,7 @@ FastAPI 백엔드와 `/technews` 경로의 Next.js 리더 UI로 아카이브를 
 - 월별 아카이브, 검색, 점수, 태그, 즐겨찾기를 제공하는 Next.js UI
 - 외부 sender가 사용할 수 있는 Telegram용 preview 및 delivery-log API
 - 인증된 리더를 위한 `idounAIChat` 세션 쿠키 공유 계약
+- `traceable-deep-agents-sample`이 사용하는 read-only evidence API
 
 ## 이 프로젝트가 필요한 이유
 
@@ -36,8 +47,10 @@ Personal Tech Radar는 각 단계를 확인할 수 있도록 분리합니다.
 6. 별도 sender가 평가나 저장 로직을 소유하지 않고 delivery preview를 재사용할
    수 있습니다.
 
-이 프로젝트는 크롤러, LLM 요약기, Telegram bot이 아니라 퍼블리싱 및 의사결정
-지원 서비스에 초점을 둡니다.
+이 프로젝트는 크롤러, LLM 요약기, Telegram bot, agent runtime이 아니라
+퍼블리싱 및 의사결정 지원 서비스에 초점을 둡니다. External
+`traceable-deep-agents-sample`이 agent 구현·orchestration을 담당하고, 이
+서비스는 domain evidence와 publishing data를 제공합니다.
 
 ## 아키텍처
 
@@ -50,6 +63,7 @@ flowchart LR
     Nginx --> Web["Next.js frontend<br/>archive · search · detail"]
     Nginx --> API["FastAPI backend<br/>issue APIs · favorites<br/>summary + profile scoring"]
     Web --> API
+    Sample["traceable-deep-agents-sample<br/>read-only domain evidence client"] -. "GET /api/issues/latest · search · {slug}" .-> API
 
     Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
     Auth -. "shared cookie + HS256 secret contract" .-> API
@@ -83,10 +97,17 @@ flowchart LR
 7. Telegram/OpenClaw sender는 포맷된 preview를 요청하고 전송 결과를 기록할
    수 있습니다. 실제 outbound 메시지 전송은 이 저장소에서 실행되지 않습니다.
 
+`traceable-deep-agents-sample`은 issue와 search API를 read-only domain evidence로
+사용합니다. Agent policy, orchestration, runtime trace는 별도의
+runtime/sample repository가 소유합니다.
+
 ## 주요 설계 결정
 
 - **Upstream 경계를 명확히 둡니다.** 이 저장소는 준비된 Markdown을 받으며,
   crawler·feed fetching·LLM summarization은 이 코드베이스 밖에 둡니다.
+- **Agent 경계를 명확히 둡니다.** 이 서비스는 domain data/scoring/publishing
+  서비스입니다. Agent runtime policy, orchestration, runtime trace storage는
+  소유하지 않으며 external sample이 게시된 evidence를 읽습니다.
 - **콘텐츠와 메타데이터의 역할을 나눕니다.** Markdown은 읽는 사람이 보는
   이슈를 보존하고, SQLite는 그룹화·검색 메타데이터·점수·즐겨찾기·전송 상태를
   담당합니다.
@@ -139,7 +160,7 @@ curl http://127.0.0.1:8010/health
 curl http://127.0.0.1:8010/openapi.json
 ```
 
-아카이브와 이슈 API는 유효한 공유 auth cookie가 필요합니다. 따라서 로컬 UI를
+아카이브·이슈·delivery API는 유효한 공유 auth cookie가 필요합니다. 따라서 로컬 UI를
 완전히 사용하려면 프런트엔드 개발 매핑이 사용하는 로컬 포트
 (`127.0.0.1:8000`)에서 형제 `idounAIChat` auth 서비스도 실행해야 합니다.
 
@@ -194,6 +215,8 @@ Backend 설정은 `backend/.env` 또는 프로세스 환경 변수에서 읽습�
 - `INGEST_TOKEN` — `POST /api/issues/ingest`에 필요한 토큰
 - `AUTH_SECRET_KEY` — `idounAIChat`와 공유하는 JWT 검증 secret
 - `AUTH_COOKIE_NAME` — 기본값 `idounai_session`
+- `CORS_ALLOWED_ORIGINS` — 정확한 frontend origin의 comma-separated 목록, 기본값은
+  로컬 `3012` origin
 - `TECH_RADAR_PROFILE_PATH` — 선택적인 YAML 프로필 경로 override
 - `TECH_RADAR_MIN_TELEGRAM_SCORE` — 기본값 `7.0`
 - `TECH_RADAR_IMPORTANT_SCORE` — 기본값 `8.5`
@@ -247,8 +270,8 @@ profile에 보관합니다.
 - `GET /api/issues/latest` — 인증된 최신 이슈
 - `GET /api/issues/search?q=keyword` — 인증된 메타데이터/본문 검색
 - `GET /api/issues/{slug}` — 인증된 이슈 상세
-- `GET /api/issues/{slug}/delivery-preview` — 전송 준비 preview
-- `POST /api/issues/{slug}/delivery-log` — 외부 전송 결과 기록
+- `GET /api/issues/{slug}/delivery-preview` — 인증된 전송 준비 preview
+- `POST /api/issues/{slug}/delivery-log` — 인증된 외부 전송 결과 기록
 - `GET/POST/DELETE /api/issues/article-favorites` — 인증된 즐겨찾기
 - `POST /api/issues/ingest` — token-protected 이슈 upsert
 
@@ -265,6 +288,12 @@ npm run build
 ```
 
 저장소 루트에서 `git diff --check`도 문서 변경을 공유하기 전에 유용합니다.
+
+## CI
+
+GitHub Actions는 push와 pull request에서 backend test, frontend production
+build, TypeScript check를 실행합니다. [CI workflow](.github/workflows/ci.yml)를
+참고하세요.
 
 ## 운영
 
@@ -293,9 +322,9 @@ asset을 `/var/www/technews-next-static`에 게시합니다.
   이 저장소에 구현되어 있지 않습니다.
 - Scorer는 프로필 기반 heuristic입니다. 설명 가능하지만 semantic LLM
   evaluator는 아닙니다.
-- Delivery preview/log route에는 현재 별도의 sender 인증 dependency가
-  없습니다. 신뢰할 수 없는 클라이언트에 노출하기 전에 배포 경계에서
-  보호해야 합니다.
+- Delivery preview/log route는 공유 인증 session 경계를 사용하지만 별도의
+  sender identity나 channel-specific token은 구현하지 않습니다. Production
+  delivery worker의 credential과 retry 정책은 이 repository 밖에서 운영해야 합니다.
 - 리더와 즐겨찾기 인증은 공유 `idounAIChat` session issuer와 secret 계약에
   의존하므로 이 저장소만으로 로그인할 수 없습니다.
 - 검색은 full-text index 대신 메타데이터와 Markdown을 스캔합니다.
@@ -333,3 +362,13 @@ technews-publisher/
 - [Session timeout design](docs/session-timeout-design.md) — 공유 auth 경계
 - [Deployment notes](deploy/README.md) — nginx, systemd, 포트, smoke check
 - [Backup and restore](BACKUP_RESTORE.md) — runtime 데이터 복구 체크리스트
+
+## 관련 프로젝트 (Related Projects)
+
+- **idounAIChat** — user-facing chat, prompt experimentation, run inspection UI 형제 repository
+- **traceable-agent-runtime** — policy-aware runtime, trace, replay, eval 형제 repository
+- **[traceable-deep-agents-sample](https://github.com/idoun/traceable-deep-agents-sample)** — external Deep Agent 구현·orchestration sample
+
+## 라이선스 (License)
+
+MIT — [LICENSE](LICENSE)를 참고합니다.

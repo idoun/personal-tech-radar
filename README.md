@@ -14,6 +14,16 @@ external integrations.
 
 [한국어 README](README.ko.md) · [Architecture diagram source](docs/architecture.mmd)
 
+## Portfolio role
+
+Personal Tech Radar is the **Domain Data / Scoring / Publishing Service** in
+the platform story. It owns prepared issue ingestion, Markdown content,
+metadata storage, profile-based scoring, search, archive, and delivery
+decision data. `traceable-deep-agents-sample` consumes its published issues as
+read-only domain evidence; Agent runtime policy and orchestration do not live
+here. Crawler, LLM summarizer, and Telegram/OpenClaw transport are external
+boundaries.
+
 ## Key ideas
 
 - Prepared-markdown ingestion through `geeknews_publish.py` and
@@ -25,6 +35,7 @@ external integrations.
 - Next.js reader UI with month grouping, search, scores, tags, and favorites
 - Telegram-ready preview and delivery-log endpoints for an external sender
 - Shared `idounAIChat` session-cookie contract for authenticated readers
+- Read-only evidence API consumed by `traceable-deep-agents-sample`
 
 ## Why this project
 
@@ -40,7 +51,9 @@ personal signal. Personal Tech Radar keeps the stages inspectable:
    storage logic.
 
 This is a focused publishing and decision-support service, not a crawler,
-LLM summarizer, or Telegram bot.
+LLM summarizer, Telegram bot, or agent runtime. The external
+`traceable-deep-agents-sample` is the agent implementation/orchestration layer;
+this service supplies domain evidence and publishing data to it.
 
 ## Architecture
 
@@ -54,6 +67,7 @@ flowchart LR
     Nginx --> Web["Next.js frontend<br/>archive · search · detail"]
     Nginx --> API["FastAPI backend<br/>issue APIs · favorites<br/>summary + profile scoring"]
     Web --> API
+    Sample["traceable-deep-agents-sample<br/>read-only domain evidence client"] -. "GET /api/issues/latest · search · {slug}" .-> API
 
     Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
     Auth -. "shared cookie + HS256 secret contract" .-> API
@@ -88,11 +102,18 @@ The standalone Mermaid source is available at
 7. A Telegram/OpenClaw sender may request a formatted preview and report a
    delivery result. No outbound message transport runs in this repository.
 
+The `traceable-deep-agents-sample` uses the issue and search APIs as read-only
+domain evidence. Agent policy, orchestration, and runtime traces remain in the
+separate runtime/sample repositories.
+
 ## Key design decisions
 
 - **The upstream boundary is explicit.** The repository receives prepared
   markdown; crawler, feed fetching, and LLM summarization are intentionally
   outside this codebase.
+- **The agent boundary is explicit.** This service is a domain data/scoring/
+  publishing service. It does not own agent runtime policy, orchestration, or
+  runtime trace storage; the external sample reads its published evidence.
 - **Content and metadata have different jobs.** Markdown preserves the
   reader-facing issue, while SQLite supports grouping, search metadata,
   scores, favorites, and delivery state.
@@ -150,9 +171,10 @@ curl http://127.0.0.1:8010/health
 curl http://127.0.0.1:8010/openapi.json
 ```
 
-The archive and issue endpoints require a valid shared auth cookie. A complete
-local UI therefore also needs the sibling `idounAIChat` auth service on its
-configured local port (`127.0.0.1:8000` in the frontend development mapping).
+The archive, issue, and delivery endpoints require a valid shared auth cookie.
+A complete local UI therefore also needs the sibling `idounAIChat` auth service
+on its configured local port (`127.0.0.1:8000` in the frontend development
+mapping).
 
 ### Preview delivery
 
@@ -206,6 +228,8 @@ Backend settings are read from `backend/.env` or the process environment.
 - `INGEST_TOKEN` — required by `POST /api/issues/ingest`
 - `AUTH_SECRET_KEY` — JWT verification secret shared with `idounAIChat`
 - `AUTH_COOKIE_NAME` — defaults to `idounai_session`
+- `CORS_ALLOWED_ORIGINS` — comma-separated exact frontend origins; defaults to
+  the local `3012` origins
 - `TECH_RADAR_PROFILE_PATH` — optional YAML profile override
 - `TECH_RADAR_MIN_TELEGRAM_SCORE` — default `7.0`
 - `TECH_RADAR_IMPORTANT_SCORE` — default `8.5`
@@ -260,8 +284,8 @@ publisher wrote.
 - `GET /api/issues/latest` — authenticated latest issue
 - `GET /api/issues/search?q=keyword` — authenticated metadata/content search
 - `GET /api/issues/{slug}` — authenticated issue detail
-- `GET /api/issues/{slug}/delivery-preview` — delivery-ready preview
-- `POST /api/issues/{slug}/delivery-log` — record an external send result
+- `GET /api/issues/{slug}/delivery-preview` — authenticated delivery-ready preview
+- `POST /api/issues/{slug}/delivery-log` — authenticated external send result
 - `GET/POST/DELETE /api/issues/article-favorites` — authenticated favorites
 - `POST /api/issues/ingest` — token-protected issue upsert
 
@@ -279,6 +303,12 @@ npm run build
 
 From the repository root, `git diff --check` is also useful before sharing a
 documentation change.
+
+## CI
+
+GitHub Actions runs the backend tests plus the frontend production build and
+TypeScript check on pushes and pull requests. See
+[.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 ## Operations
 
@@ -307,9 +337,10 @@ to `/var/www/technews-next-static` by the deployment helper.
   are not implemented here.
 - The scorer is profile-based heuristic logic. It is explainable but not a
   semantic LLM evaluator.
-- The delivery preview/log routes currently have no separate sender
-  authentication dependency; protect them at the deployment boundary before
-  exposing them to untrusted clients.
+- Delivery preview/log routes use the shared authenticated session boundary;
+  they do not implement a separate sender identity or channel-specific token.
+  A production delivery worker still needs its own operational credential and
+  retry policy outside this repository.
 - Reader and favorite authentication depends on the shared `idounAIChat`
   session issuer and secret contract; this repository is not standalone for
   login.
@@ -353,3 +384,13 @@ technews-publisher/
   boundary notes
 - [Deployment notes](deploy/README.md) — nginx, systemd, ports, and smoke checks
 - [Backup and restore](BACKUP_RESTORE.md) — runtime data recovery checklist
+
+## Related Projects
+
+- **idounAIChat** — user-facing chat, prompt experimentation, and run inspection UI (sibling repository)
+- **traceable-agent-runtime** — policy-aware runtime, trace, replay, and eval (sibling repository)
+- **[traceable-deep-agents-sample](https://github.com/idoun/traceable-deep-agents-sample)** — external Deep Agent implementation and orchestration sample
+
+## License
+
+MIT — see [LICENSE](LICENSE).
