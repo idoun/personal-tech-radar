@@ -111,7 +111,9 @@ profile:
 
 
 def test_build_fallback_score_uses_expanded_project_profile_keywords():
-    profile = load_tech_radar_profile()
+    # Keep this fixture independent from a developer's absolute .env profile path.
+    profile_path = Path(__file__).resolve().parents[4] / 'config' / 'tech-radar-profile.yaml'
+    profile = load_tech_radar_profile(str(profile_path))
     structured = StructuredSummary(
         short_summary='Self-hosted LLM serving stack improves local inference throughput',
         impact_summary='The write-up compares quantization choices, tensor parallel trade-offs, and GPU serving ergonomics.',
