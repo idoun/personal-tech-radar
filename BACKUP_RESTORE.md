@@ -131,8 +131,9 @@ curl -I http://127.0.0.1:3012/technews/
 Public:
 
 ```bash
-curl -I https://idoun.pe.kr/technews/
-curl -I https://idoun.pe.kr/technews-api/api/issues/latest
+# Set PUBLIC_BASE_URL locally to the public origin without a trailing slash.
+curl -I "${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL before running this check}/technews/"
+curl -I "${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL before running this check}/technews-api/api/issues/latest"
 ```
 
 ## 9. Minimum safe recovery set

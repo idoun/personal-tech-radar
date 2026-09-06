@@ -132,11 +132,15 @@ After deploy, verify all of these:
 2. frontend local response
    - `curl -I http://127.0.0.1:3012/technews/`
 3. public frontend
-   - `curl -I https://idoun.pe.kr/technews/`
+   - Set `PUBLIC_BASE_URL` in the local shell to the public origin without a trailing slash.
+   - `curl -I "${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL before running this check}/technews/"`
 4. public API
-   - `curl -I https://idoun.pe.kr/technews-api/api/issues/latest`
+   - `curl -I "${PUBLIC_BASE_URL:?Set PUBLIC_BASE_URL before running this check}/technews-api/api/issues/latest"`
 5. static asset directory exists
    - `ls /var/www/technews-next-static`
+
+The public checks intentionally read `PUBLIC_BASE_URL` from the operator's local
+environment instead of storing a personal hostname in this repository.
 
 ## Common failure modes
 
