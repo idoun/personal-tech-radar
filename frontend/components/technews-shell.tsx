@@ -43,12 +43,21 @@ function displayTitle(title: string) {
   return title.replace(/^((?:GeekNews)\s+)어제자\s+요약\s*-\s*/u, '$1').trim();
 }
 
-function readIssueDateFromUrl() {
+function readIssueSlugFromUrl() {
   if (typeof window === 'undefined') {
     return null;
   }
 
-  const value = new URLSearchParams(window.location.search).get('date')?.trim() || null;
+  const params = new URLSearchParams(window.location.search);
+  const issueSlug = params.get('issue')?.trim();
+  if (issueSlug) {
+    if (!/^bytebytego-\d{4}-\d{2}-\d{2}$/.test(issueSlug)) {
+      throw new Error('유효하지 않은 문서 주소입니다.');
+    }
+    return issueSlug;
+  }
+
+  const value = params.get('date')?.trim() || null;
   if (!value) {
     return null;
   }
@@ -66,8 +75,8 @@ function readIssueDateFromUrl() {
 }
 
 function fetchIssueFromUrl() {
-  const requestedDate = readIssueDateFromUrl();
-  return requestedDate ? fetchIssue(requestedDate) : fetchLatestIssue();
+  const requestedSlug = readIssueSlugFromUrl();
+  return requestedSlug ? fetchIssue(requestedSlug) : fetchLatestIssue();
 }
 
 function updateIssueUrl(slug: string) {
@@ -76,18 +85,21 @@ function updateIssueUrl(slug: string) {
   }
 
   const url = new URL(window.location.href);
-  if (url.searchParams.get('date') === slug) {
+  const param = /^\d{4}-\d{2}-\d{2}$/.test(slug) ? 'date' : 'issue';
+  if (url.searchParams.get(param) === slug) {
     return;
   }
 
-  url.searchParams.set('date', slug);
-  window.history.pushState({ date: slug }, '', `${url.pathname}${url.search}${url.hash}`);
+  url.searchParams.delete(param === 'date' ? 'issue' : 'date');
+  url.searchParams.set(param, slug);
+  window.history.pushState({ issue: slug }, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 type ArticleCard = {
   title: string;
   summary: string;
   source?: string;
+  video?: string;
   geeknews?: string;
   communityReaction?: string;
   communityPoints: string[];
@@ -113,8 +125,8 @@ function buildTopSummary(detail: IssueDetail, _cards: ArticleCard[]) {
 }
 
 function buildFallbackSummary(summary: string) {
-  const normalized = summary.replace(/^오늘의 흐름:\s*/, '').trim();
-  return normalized || '오늘의 주요 GeekNews 요약';
+  const normalized = summary.replace(/^(?:오늘의 흐름|이번 호의 흐름):\s*/, '').trim();
+  return normalized || '이번 기술 소식 요약';
 }
 
 function parseIssueBody(markdown: string) {
@@ -142,7 +154,7 @@ function parseIssueBody(markdown: string) {
     }
 
     if (!current) {
-      if (!line.startsWith('오늘의 흐름:')) {
+      if (!line.startsWith('오늘의 흐름:') && !line.startsWith('이번 호의 흐름:')) {
         intro.push(line);
       }
       continue;
@@ -159,6 +171,8 @@ function parseIssueBody(markdown: string) {
       }
     } else if (line.startsWith('- 원문:')) {
       current.source = line.replace('- 원문:', '').trim();
+    } else if (line.startsWith('- 영상:')) {
+      current.video = line.replace('- 영상:', '').trim();
     } else if (line.startsWith('- GeekNews:')) {
       current.geeknews = line.replace('- GeekNews:', '').trim();
     }
@@ -701,7 +715,7 @@ export function TechNewsShell() {
         <div className={`border-b px-4 py-4 ${themeClass.sidebarHeaderBorder}`}>
           <div className={`text-[11px] uppercase tracking-[0.24em] ${themeClass.sidebarEyebrow}`}>TechNews</div>
           <h1 className={`mt-1.5 text-xl font-semibold ${themeClass.title}`}>Personal Tech Radar</h1>
-          <p className={`mt-1.5 text-[15px] leading-6 md:text-sm ${themeClass.sub}`}>중요도, 레이더 상태, 액션을 중심으로 GeekNews를 쌓아보는 공간</p>
+          <p className={`mt-1.5 text-[15px] leading-6 md:text-sm ${themeClass.sub}`}>중요도, 레이더 상태, 액션을 중심으로 기술 소식을 쌓아보는 공간</p>
           <div className="mt-4 flex items-center gap-2">
             <input
               type="search"
@@ -906,9 +920,12 @@ export function TechNewsShell() {
             </div>
           </div>
           <h2 className={`mt-1.5 text-[1.7rem] font-semibold leading-tight md:text-2xl ${themeClass.title}`}>
-            {active ? <HighlightText text={displayTitle(active.title)} query={searchQuery} markClassName={themeClass.searchMark} /> : 'GeekNews Daily Summary'}
+            {active ? <HighlightText text={displayTitle(active.title)} query={searchQuery} markClassName={themeClass.searchMark} /> : 'Tech News Summary'}
           </h2>
-          <p className={`mt-1.5 text-[15px] md:text-sm ${themeClass.sub}`}>{active ? formatLongDate(active.issue_date) : '문서를 고르는 중'}</p>
+          <p className={`mt-1.5 text-[15px] md:text-sm ${themeClass.sub}`}>
+            {active ? `${active.source === 'bytebytego' ? 'ByteByteGo · ' : 'GeekNews · '}${formatLongDate(active.issue_date)}` : '문서를 고르는 중'}
+            {active?.source !== 'bytebytego' && active?.source_url ? <a className="ml-2 underline" href={active.source_url} target="_blank" rel="noopener noreferrer">원문 보기</a> : null}
+          </p>
         </div>
 
         <div className="mx-auto w-full max-w-[104rem] flex-1 px-2 py-3 md:max-w-[88rem] md:px-3 lg:max-w-[92rem] xl:max-w-[96rem] md:py-4">
@@ -1123,7 +1140,7 @@ export function TechNewsShell() {
                       </div>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {card.source ? (
+                      {card.source && active.source !== 'bytebytego' ? (
                         <a
                           href={card.source}
                           target="_blank"
@@ -1131,6 +1148,16 @@ export function TechNewsShell() {
                           className={`rounded-full border px-3 py-1 text-[15px] transition md:text-sm ${themeClass.primaryLink}`}
                         >
                           원문 보기
+                        </a>
+                      ) : null}
+                      {card.video ? (
+                        <a
+                          href={card.video}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`rounded-full border px-3 py-1 text-[15px] transition md:text-sm ${themeClass.primaryLink}`}
+                        >
+                          영상 보기
                         </a>
                       ) : null}
                       {card.geeknews ? (

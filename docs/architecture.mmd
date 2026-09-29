@@ -8,7 +8,7 @@ flowchart LR
     Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
     Auth -. "shared cookie + HS256 secret contract" .-> API
 
-    Publisher["External GeekNews / prepared issue<br/>geeknews_publish.py → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
+    Publisher["External GeekNews or ByteByteGo summary<br/>source publisher → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
     Publisher --> DB[("SQLite technews.db<br/>issues · article_favorites")]
     API --> Content
     API --> DB

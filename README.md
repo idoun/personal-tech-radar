@@ -1,9 +1,10 @@
 # Personal Tech Radar
 
-**A profile-driven GeekNews archive for scoring, search, and delivery-ready reading.**
+**A profile-driven tech-news archive for scoring, search, and delivery-ready reading.**
 
-Personal Tech Radar is the storage, scoring, and web publishing layer for a
-GeekNews-based daily digest. It turns prepared markdown issues into a searchable
+Personal Tech Radar is the storage, scoring, and web publishing layer for
+GeekNews daily digests and ByteByteGo weekly summaries. It turns prepared
+markdown issues into a searchable
 archive: issue metadata and article signals are stored in SQLite, full markdown
 is kept as content, and a FastAPI backend serves a Next.js reader under
 `/technews`.
@@ -26,8 +27,8 @@ boundaries.
 
 ## Key ideas
 
-- Prepared-markdown ingestion through `geeknews_publish.py` and
-  `ingest_issue.py`
+- Prepared-markdown ingestion through `geeknews_publish.py`,
+  `bytebytego_publish.py`, and `ingest_issue.py`
 - Profile-driven interest/project matching with transparent fallback scoring
 - Structured summaries, radar categories/statuses, and score explanations
 - Markdown-backed issue detail with SQLite metadata and article favorites
@@ -39,7 +40,7 @@ boundaries.
 
 ## Why this project
 
-Daily technical feeds are easy to collect and hard to turn into a useful
+Technical feeds are easy to collect and hard to turn into a useful
 personal signal. Personal Tech Radar keeps the stages inspectable:
 
 1. An external process prepares an issue in markdown.
@@ -72,7 +73,7 @@ flowchart LR
     Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
     Auth -. "shared cookie + HS256 secret contract" .-> API
 
-    Publisher["External GeekNews / prepared issue<br/>geeknews_publish.py → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
+    Publisher["External GeekNews or ByteByteGo summary<br/>source publisher → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
     Publisher --> DB[("SQLite technews.db<br/>issues · article_favorites")]
     API --> Content
     API --> DB
@@ -85,8 +86,8 @@ The standalone Mermaid source is available at
 
 ### Execution flow
 
-1. A prepared GeekNews issue enters through the CLI publisher or the protected
-   `POST /api/issues/ingest` endpoint.
+1. A prepared GeekNews or ByteByteGo issue enters through a CLI publisher or
+   the protected `POST /api/issues/ingest` endpoint.
 2. The ingestion boundary writes markdown under the configured content root
    and upserts the issue row in the configured SQLite database.
 3. Missing structured summaries and scores are filled with safe fallback
@@ -117,6 +118,9 @@ separate runtime/sample repositories.
 - **Content and metadata have different jobs.** Markdown preserves the
   reader-facing issue, while SQLite supports grouping, search metadata,
   scores, favorites, and delivery state.
+- **Sources remain distinct.** Existing GeekNews issues default to `source=geeknews`;
+  ByteByteGo uses a source-prefixed date slug but does not expose an issue permalink; the email body is the reading source.
+  The upstream Gmail check and Korean summarization run in a separate OpenClaw automation.
 - **Fallbacks preserve old issues.** Legacy plain-text summaries and rows that
   predate structured scoring continue to load through normalized fallback
   values.
@@ -139,7 +143,7 @@ separate runtime/sample repositories.
 - **Archive:** issues grouped by year and month, ordered by issue date.
 - **Search:** scans issue metadata and markdown text, then ranks matching
   issues for the reader.
-- **Issue detail:** renders article cards, original links, GeekNews links,
+- **Issue detail:** renders article cards, original links, optional GeekNews links,
   structured summary, radar status, score breakdown, and community reaction.
 - **Article favorites:** authenticated users can add or remove stable article
   keys per issue.
@@ -163,6 +167,28 @@ cat article.md | python scripts/geeknews_publish.py
 The CLI derives the issue envelope from the prepared markdown and uses the same
 `DATABASE_URL`, `CONTENT_ROOT`, and profile settings as the backend. For direct
 JSON ingestion, `scripts/ingest_issue.py` accepts JSON on stdin.
+
+### Archive ByteByteGo summaries
+
+The OpenClaw job `bytebytego-technews-intake` checks Gmail daily at **01:30 KST**
+for the weekly Saturday newsletter, including delayed arrivals. It skips
+already-stored `bytebytego-YYYY-MM-DD` slugs. The job prompt is in
+[`automation/bytebytego-daily.md`](automation/bytebytego-daily.md); email content
+is summarized in Korean before ingestion. Sponsored sections, tracking links,
+images, and full email text are not republished. Each editorial topic has a detailed
+original summary; only direct video links actually present in the email are shown
+as “Watch video,” not as links to a presumed newsletter article.
+
+To publish an already-prepared summary manually:
+
+```bash
+backend/.venv/bin/python scripts/bytebytego_publish.py \
+  --issue-date 2026-09-26 < prepared-summary.md
+```
+
+Use the publisher's UTC issue date (Saturday), which may appear as Sunday in
+KST. The 2026-09-19 and 2026-09-26 issues were backfilled; the command skips
+an existing issue rather than overwriting it.
 
 ### Inspect the service
 

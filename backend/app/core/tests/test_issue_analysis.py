@@ -27,3 +27,12 @@ def test_parse_issue_markdown_supports_per_article_community_reaction():
         '도입보다 유지보수가 더 어렵다는 의견이 있었음.',
         '팀 공용 규칙과 개인 설정을 분리해야 한다는 얘기도 나옴.',
     ]
+
+
+def test_parse_weekly_intro_is_not_an_article():
+    parsed = parse_issue_markdown(
+        '이번 호의 흐름: 두 주제를 다룸.\n\n## API\n요약: 계약을 정리함.\n'
+    )
+
+    assert parsed.intro_lines == []
+    assert [card.title for card in parsed.cards] == ['API']

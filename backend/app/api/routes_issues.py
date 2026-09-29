@@ -87,6 +87,8 @@ def _issue_list_item(issue: Issue) -> IssueListItem:
     return IssueListItem(
         id=issue.id,
         slug=issue.slug,
+        source=issue.source,
+        source_url=issue.source_url,
         title=issue.title,
         summary=issue.summary,
         short_summary=structured.short_summary,
@@ -223,6 +225,8 @@ def _search_issue(issue: Issue, query: str) -> IssueSearchResult | None:
     item = IssueListItem(
         id=issue.id,
         slug=issue.slug,
+        source=issue.source,
+        source_url=issue.source_url,
         title=issue.title,
         summary=issue.summary,
         short_summary=structured.short_summary,
@@ -247,11 +251,16 @@ def _search_issue(issue: Issue, query: str) -> IssueSearchResult | None:
 
 
 def _make_slug(payload: IssueIngestRequest) -> str:
-    return payload.slug or payload.issue_date.isoformat()
+    return payload.slug or (
+        payload.issue_date.isoformat()
+        if payload.source == 'geeknews'
+        else f'{payload.source}-{payload.issue_date.isoformat()}'
+    )
 
 
-def _write_markdown(issue_date, slug: str, markdown: str) -> str:
-    rel_path = f'{issue_date.year:04d}/{issue_date.month:02d}/{slug}-geeknews.md'
+def _write_markdown(issue_date, slug: str, markdown: str, source: str = 'geeknews') -> str:
+    filename = f'{slug}-geeknews.md' if source == 'geeknews' else f'{slug}.md'
+    rel_path = f'{issue_date.year:04d}/{issue_date.month:02d}/{filename}'
     path = (settings.content_root_path / rel_path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(markdown.strip() + '\n', encoding='utf-8')
@@ -385,12 +394,14 @@ def search_issues(
 @router.post('/ingest', response_model=IssueIngestResponse, dependencies=[Depends(_require_ingest_token)])
 def ingest_issue(payload: IssueIngestRequest, db: Session = Depends(get_db)):
     slug = _make_slug(payload)
-    markdown_path = _write_markdown(payload.issue_date, slug, payload.markdown)
+    markdown_path = _write_markdown(payload.issue_date, slug, payload.markdown, payload.source)
     issue = db.query(Issue).filter(Issue.slug == slug).first()
     created = issue is None
     if issue is None:
         issue = Issue(slug=slug)
         db.add(issue)
+    issue.source = payload.source
+    issue.source_url = payload.source_url
 
     structured = build_fallback_structured_summary(payload.summary, markdown=payload.markdown)
     if payload.short_summary:

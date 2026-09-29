@@ -100,7 +100,7 @@ def parse_issue_markdown(markdown: str) -> IssueAnalysis:
             continue
 
         if current is None:
-            if not line.startswith('오늘의 흐름:'):
+            if not line.startswith(('오늘의 흐름:', '이번 호의 흐름:')):
                 intro.append(line)
             continue
 

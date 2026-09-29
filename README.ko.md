@@ -1,8 +1,8 @@
 # Personal Tech Radar
 
-**프로필 기반 GeekNews 아카이브, 중요도 평가, 검색, 전송 준비 레이어**
+**프로필 기반 기술 뉴스 아카이브, 중요도 평가, 검색, 전송 준비 레이어**
 
-Personal Tech Radar는 GeekNews 기반 일일 다이제스트를 저장하고 평가하며
+Personal Tech Radar는 GeekNews 일일 다이제스트와 ByteByteGo 주간 요약을 저장·평가하며
 웹으로 제공하는 계층입니다. 준비된 Markdown 이슈를 받아 SQLite에 이슈
 메타데이터와 기사 신호를 저장하고, 원문 Markdown은 콘텐츠로 보존하며,
 FastAPI 백엔드와 `/technews` 경로의 Next.js 리더 UI로 아카이브를 제공합니다.
@@ -24,7 +24,7 @@ domain evidence로 사용하며, Agent runtime policy와 orchestration은 이곳
 
 ## 핵심 아이디어
 
-- `geeknews_publish.py`와 `ingest_issue.py`를 통한 준비된 Markdown 수집
+- `geeknews_publish.py`, `bytebytego_publish.py`, `ingest_issue.py`를 통한 준비된 Markdown 수집
 - 관심사·프로젝트 프로필 매칭과 확인 가능한 fallback 점수 계산
 - 구조화 요약, 레이더 카테고리/상태, 점수 근거 제공
 - Markdown 기반 상세 화면과 SQLite 메타데이터·기사 즐겨찾기
@@ -68,7 +68,7 @@ flowchart LR
     Auth["idounAIChat auth issuer<br/>shared idounai_session JWT"] -. "login/session" .-> Browser
     Auth -. "shared cookie + HS256 secret contract" .-> API
 
-    Publisher["External GeekNews / prepared issue<br/>geeknews_publish.py → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
+    Publisher["External GeekNews or ByteByteGo summary<br/>source publisher → ingest_issue.py"] --> Content[("Markdown content<br/>workspace content/...")]
     Publisher --> DB[("SQLite technews.db<br/>issues · article_favorites")]
     API --> Content
     API --> DB
@@ -81,7 +81,7 @@ flowchart LR
 
 ### 실행 흐름
 
-1. 준비된 GeekNews 이슈가 CLI publisher 또는 인증된
+1. 준비된 GeekNews 또는 ByteByteGo 이슈가 CLI publisher 또는 인증된
    `POST /api/issues/ingest`로 들어옵니다.
 2. ingestion 경계가 설정된 content root에 Markdown을 쓰고 설정된 SQLite
    데이터베이스의 이슈 행을 upsert합니다.
@@ -111,6 +111,9 @@ runtime/sample repository가 소유합니다.
 - **콘텐츠와 메타데이터의 역할을 나눕니다.** Markdown은 읽는 사람이 보는
   이슈를 보존하고, SQLite는 그룹화·검색 메타데이터·점수·즐겨찾기·전송 상태를
   담당합니다.
+- **출처를 구분합니다.** 기존 GeekNews 이슈는 `source=geeknews`가 기본이며,
+  ByteByteGo는 출처가 붙은 날짜 slug를 사용하지만 이슈 원문 링크는 노출하지 않습니다. 읽을 내용은 메일 본문을 바탕으로 요약합니다. Gmail 확인과
+  한국어 요약은 별도 OpenClaw 자동 작업에서 수행합니다.
 - **Fallback으로 오래된 이슈를 보존합니다.** 예전 plain-text summary와
   구조화 점수가 없는 레거시 행도 정규화된 fallback 값으로 계속 읽습니다.
 - **점수를 설명 가능하게 유지합니다.** 현재 scorer는 프로필 키워드,
@@ -130,7 +133,7 @@ runtime/sample repository가 소유합니다.
 
 - **아카이브:** 연·월별 이슈 그룹, 이슈 날짜순 정렬
 - **검색:** 이슈 메타데이터와 Markdown 본문을 검색하고 일치 이슈를 순위화
-- **이슈 상세:** 기사 카드, 원문 링크, GeekNews 링크, 구조화 요약, 레이더
+- **이슈 상세:** 기사 카드, 원문 링크, 선택적인 GeekNews 링크, 구조화 요약, 레이더
   상태, 점수 breakdown, 커뮤니티 반응 표시
 - **기사 즐겨찾기:** 인증된 사용자가 이슈별 stable article key를 추가·삭제
 - **레이더 점수:** interest, project, novelty, actionability, credibility,
@@ -152,6 +155,26 @@ cat article.md | python scripts/geeknews_publish.py
 CLI는 준비된 Markdown에서 이슈 envelope를 만들고 백엔드와 동일한
 `DATABASE_URL`, `CONTENT_ROOT`, 프로필 설정을 사용합니다. JSON을 직접 넣을
 때는 `scripts/ingest_issue.py`가 stdin의 JSON을 받습니다.
+
+### ByteByteGo 요약 저장
+
+OpenClaw 작업 `bytebytego-technews-intake`가 주간 토요일 뉴스레터의 지연 도착도
+놓치지 않도록 **매일 KST 01:30** Gmail을 확인합니다. 이미 저장된
+`bytebytego-YYYY-MM-DD` slug는 건너뜁니다. 작업 지시는
+[`automation/bytebytego-daily.md`](automation/bytebytego-daily.md)에 있으며,
+메일 내용은 저장 전에 한국어로 자체 요약합니다. 광고, 추적 링크, 이미지,
+메일 전문은 재게시하지 않습니다. 각 주제의 설명을 충분히 요약하고,
+메일에 직접 포함된 영상 주소만 `영상 보기`로 보여줍니다.
+
+이미 작성한 요약을 직접 저장하려면 다음을 실행합니다.
+
+```bash
+backend/.venv/bin/python scripts/bytebytego_publish.py \
+  --issue-date 2026-09-26 < prepared-summary.md
+```
+
+한국에서는 일요일에 도착하더라도 발행자 기준 UTC 토요일을 이슈 날짜로 씁니다.
+2026-09-19·2026-09-26 이슈는 소급 저장했으며, 위 명령은 기존 이슈를 덮어쓰지 않습니다.
 
 ### 서비스 확인
 

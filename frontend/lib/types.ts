@@ -46,6 +46,8 @@ export type DeliveryPreview = {
 export type IssueListItem = {
   id: number;
   slug: string;
+  source: string;
+  source_url: string | null;
   title: string;
   summary: string;
   short_summary: string;

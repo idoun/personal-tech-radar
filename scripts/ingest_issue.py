@@ -34,6 +34,11 @@ def _normalize_community_reaction(payload: dict) -> tuple[str, list[str]]:
 def main():
     payload = json.load(sys.stdin)
     issue_date = _coerce_issue_date(payload['issue_date'])
+    source = payload.get('source', 'geeknews')
+    if source not in {'geeknews', 'bytebytego'}:
+        raise ValueError(f'Unsupported issue source: {source}')
+    # The ByteByteGo email is the reading source; its web permalink is not a usable article link.
+    source_url = None if source == 'bytebytego' else payload.get('source_url')
     title = payload['title']
     summary = payload['summary']
     markdown = payload['markdown'].strip() + '\n'
@@ -72,8 +77,9 @@ def main():
         score.reason = str(payload['score_reason']).strip() or score.reason
     if payload.get('recommended_action'):
         score.recommended_action = str(payload['recommended_action']).strip() or score.recommended_action
-    slug = payload.get('slug') or issue_date.isoformat()
-    rel_path = f'{issue_date.year:04d}/{issue_date.month:02d}/{slug}-geeknews.md'
+    slug = payload.get('slug') or (issue_date.isoformat() if source == 'geeknews' else f'{source}-{issue_date.isoformat()}')
+    filename = f'{slug}-geeknews.md' if source == 'geeknews' else f'{slug}.md'
+    rel_path = f'{issue_date.year:04d}/{issue_date.month:02d}/{filename}'
     content_path = CONTENT_ROOT / rel_path
     content_path.parent.mkdir(parents=True, exist_ok=True)
     content_path.write_text(markdown, encoding='utf-8')
@@ -81,13 +87,15 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         '''INSERT INTO issues (
-             slug, title, summary, short_summary, impact_summary, action_items_json, tags_json, radar_category, radar_status,
+             slug, source, source_url, title, summary, short_summary, impact_summary, action_items_json, tags_json, radar_category, radar_status,
              interest_score, project_score, novelty_score, actionability_score, credibility_score, community_score, final_score,
              score_reason, recommended_action, community_reaction_summary, community_reaction_bullets_json,
-             issue_date, year, month, markdown_path, is_published, created_at, updated_at
+             issue_date, year, month, markdown_path, is_published, telegram_sent, telegram_message, telegram_error, created_at, updated_at
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, '', '', datetime('now'), datetime('now'))
            ON CONFLICT(slug) DO UPDATE SET
+             source=excluded.source,
+             source_url=excluded.source_url,
              title=excluded.title,
              summary=excluded.summary,
              short_summary=excluded.short_summary,
@@ -115,6 +123,8 @@ def main():
              updated_at=datetime('now')''',
         (
             slug,
+            source,
+            source_url,
             title,
             summary,
             structured.short_summary,

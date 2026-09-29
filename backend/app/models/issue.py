@@ -11,6 +11,8 @@ class Issue(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    source: Mapped[str] = mapped_column(String(32), default='geeknews', nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(String(255))
     summary: Mapped[str] = mapped_column(Text)
     short_summary: Mapped[str] = mapped_column(Text, default='')

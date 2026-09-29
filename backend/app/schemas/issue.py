@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -18,6 +19,8 @@ class IssueScore(BaseModel):
 class IssueListItem(BaseModel):
     id: int
     slug: str
+    source: str = 'geeknews'
+    source_url: str | None = None
     title: str
     summary: str
     short_summary: str
@@ -125,6 +128,8 @@ class ArticleFavoriteDeleteResponse(BaseModel):
 
 class IssueIngestRequest(BaseModel):
     issue_date: date
+    source: Literal['geeknews', 'bytebytego'] = 'geeknews'
+    source_url: str | None = None
     title: str
     summary: str
     markdown: str

@@ -32,10 +32,14 @@ app.add_middleware(
 def ensure_tables():
     db_path = settings.database_path
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    # A fresh database needs the base table before compatibility columns can be inspected.
+    Base.metadata.create_all(bind=engine)
 
     with sqlite3.connect(db_path) as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(issues)")}
         migrations = {
+            'source': "ALTER TABLE issues ADD COLUMN source TEXT NOT NULL DEFAULT 'geeknews'",
+            'source_url': 'ALTER TABLE issues ADD COLUMN source_url TEXT',
             'short_summary': "ALTER TABLE issues ADD COLUMN short_summary TEXT NOT NULL DEFAULT ''",
             'impact_summary': "ALTER TABLE issues ADD COLUMN impact_summary TEXT NOT NULL DEFAULT ''",
             'action_items_json': "ALTER TABLE issues ADD COLUMN action_items_json TEXT NOT NULL DEFAULT '[]'",
@@ -84,9 +88,6 @@ def ensure_tables():
             'ON article_favorites(user_id, created_at)'
         )
         conn.commit()
-
-    Base.metadata.create_all(bind=engine)
-
 
 def seed_if_empty():
     from sqlalchemy.orm import Session
